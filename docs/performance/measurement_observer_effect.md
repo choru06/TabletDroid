@@ -1,77 +1,78 @@
-﻿# TabletDroid v0.1 Measurement Observer Effect & Decoupling Validation Report
+﻿# TabletDroid v0.1 Measurement Observer Effect Validation Report
 
-- **Timestamp**: 2026-08-20 03:31:14
+- **Timestamp**: 2026-08-20 04:07:45
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **WHPX Acceleration**: Active & Operational
-- **Target Application**: com.android.chrome
-- **Resolution Tested**: 1920x1200 (Native Tablet Resolution)
-- **Benchmark Protocol**: ObserverEffectA_B (Conditions: 4, 5 Trials x 10s/trial)
-- **Frame Rate Source**: SurfaceFlinger Compositor Presentation (dumpsys SurfaceFlinger --timestats -dump)
-- **Latency/Jitter Source**: HWUI Framestats (dumpsys gfxinfo framestats, $\le 120$ circular buffer)
+- **Target Package**: com.tabletdroid.benchmark
+- **Target Activity**: com.tabletdroid.benchmark/.BenchmarkActivity
+- **Target App Verified**: YES
+- **Resolution Tested**: 1920x1200 @ 280dpi (Native Tablet Resolution)
+- **Benchmark Protocol**: ObserverEffectA_B (Conditions: 4, 5 Trials x Warmup:5s, Measure:10s)
+- **Frame Rate Source**: SurfaceFlinger Compositor Presentation (dumpsys SurfaceFlinger --timestats -dump) on target layer
+- **Latency/Jitter Source**: HWUI Framestats (dumpsys gfxinfo framestats)
 
 ---
 
 ## 1. [MEASURED] Statistical Comparison Table (Medians across 5 Trials)
 
-| Condition | Valid Trials | Presented FPS | FPS [Min, Max] | StdDev | Wall Duration | Swipe Cadence | Frame Latency | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | CPU Avg % | GPU 3D % |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **A. No Telemetry (Pure Workload)** | 5 / 5 | **4.03 FPS** | [1.01, 5.98] | 2.03 | 11.27s | 0.49 sw/s | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| **B. CPU Telemetry Only** | 5 / 5 | **5.3 FPS** | [2.7, 6.23] | 1.41 | 10.64s | 0.59 sw/s | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| **C. GPU Telemetry Only** | 5 / 5 | **4.51 FPS** | [3.33, 6.13] | 1.01 | 10.8s | 0.48 sw/s | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| **D. CPU + GPU Telemetry** | 5 / 5 | **6.12 FPS** | [4.69, 6.74] | 0.7 | 12.22s | 0.41 sw/s | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
+| Condition | Valid Trials | Presented FPS | FPS [Min, Max] | StdDev | FPS CV% | Distance (px) | Dist CV% | Latency Avg | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | CPU Avg % | GPU 3D % |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **A. No Telemetry (Pure Workload)** | 5 / 5 | **23.67 FPS** | [15.79, 27.37] | 4.3 | 19.5% | 8000 px | 1.7% | 102.09 ms | 98.48 ms | 158.99 ms | 263.17 ms | 100% | 0% | 0% |
+| **B. CPU Telemetry Only** | 5 / 5 | **7.69 FPS** | [7, 8.9] | 0.62 | 8% | 5187 px | 9.5% | 389.99 ms | 383.17 ms | 590.05 ms | 826.88 ms | 100% | 17.6% | 0% |
+| **C. GPU Telemetry Only** | 5 / 5 | **5.19 FPS** | [5, 5.2] | 0.08 | 1.6% | 3440 px | 3% | 551.19 ms | 483.69 ms | 875.21 ms | 1162.22 ms | 100% | 0% | 0.7% |
+| **D. CPU + GPU Telemetry** | 5 / 5 | **18.59 FPS** | [12.99, 20.39] | 2.55 | 14.3% | 7933 px | 5.2% | 165.56 ms | 162.13 ms | 260.77 ms | 364.59 ms | 100% | 16.3% | 0% |
 
 ### 1.1 All Raw Trial Records
 
-| Trial ID | Condition | Status | Duration (s) | Swipes | Cadence | SF Presented | Presented FPS | Gfx Records | Latency Avg (ms) | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | CPU Avg % | GPU 3D % |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| CondA_NoTelemetry (T1) | A. No Telemetry (Pure Workload) | VALID | 17.37s | 5 | 0.29 | 34 | 1.96 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondA_NoTelemetry (T2) | A. No Telemetry (Pure Workload) | VALID | 10.87s | 7 | 0.64 | 65 | 5.98 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondA_NoTelemetry (T3) | A. No Telemetry (Pure Workload) | VALID | 10.88s | 9 | 0.83 | 11 | 1.01 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondA_NoTelemetry (T4) | A. No Telemetry (Pure Workload) | VALID | 14.16s | 7 | 0.49 | 57 | 4.03 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondA_NoTelemetry (T5) | A. No Telemetry (Pure Workload) | VALID | 11.27s | 3 | 0.27 | 67 | 5.94 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondB_CpuOnly (T1) | B. CPU Telemetry Only | VALID | 13.7s | 2 | 0.15 | 48 | 3.5 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondB_CpuOnly (T2) | B. CPU Telemetry Only | VALID | 10.19s | 6 | 0.59 | 54 | 5.3 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondB_CpuOnly (T3) | B. CPU Telemetry Only | VALID | 10.64s | 7 | 0.66 | 64 | 6.02 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondB_CpuOnly (T4) | B. CPU Telemetry Only | VALID | 10.6s | 8 | 0.75 | 66 | 6.23 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondB_CpuOnly (T5) | B. CPU Telemetry Only | VALID | 11.5s | 1 | 0.09 | 31 | 2.7 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondC_GpuOnly (T1) | C. GPU Telemetry Only | VALID | 10.8s | 7 | 0.65 | 36 | 3.33 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondC_GpuOnly (T2) | C. GPU Telemetry Only | VALID | 10.45s | 6 | 0.57 | 57 | 5.45 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondC_GpuOnly (T3) | C. GPU Telemetry Only | VALID | 11.31s | 4 | 0.35 | 51 | 4.51 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondC_GpuOnly (T4) | C. GPU Telemetry Only | VALID | 10.44s | 5 | 0.48 | 64 | 6.13 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondC_GpuOnly (T5) | C. GPU Telemetry Only | VALID | 22.5s | 5 | 0.22 | 88 | 3.91 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondD_BothCpuGpu (T1) | D. CPU + GPU Telemetry | VALID | 12.22s | 5 | 0.41 | 78 | 6.38 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondD_BothCpuGpu (T2) | D. CPU + GPU Telemetry | VALID | 16.19s | 2 | 0.12 | 76 | 4.69 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondD_BothCpuGpu (T3) | D. CPU + GPU Telemetry | VALID | 12.1s | 5 | 0.41 | 74 | 6.12 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondD_BothCpuGpu (T4) | D. CPU + GPU Telemetry | VALID | 12.32s | 7 | 0.57 | 83 | 6.74 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
-| CondD_BothCpuGpu (T5) | D. CPU + GPU Telemetry | VALID | 11.78s | 11 | 0.93 | 68 | 5.77 FPS | 0 | 0 ms | 0 ms | 0 ms | 0 ms | 0% | 0% | 0% |
+| Trial ID | Condition | Status | Duration (s) | Target Layer | SF Start | SF End | Delta | Presented FPS | Distance (px) | Gfx Records | Latency Avg (ms) | P50 (ms) | P90 (ms) | Jank % | CPU % (Samples) | GPU 3D % (Samples, Matched) |
+| :--- | :--- | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| CondA_NoTelemetry (T1) | A. No Telemetry (Pure Workload) | VALID | 10.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 4316 | 4553 | 237 | 23.67 FPS | 8000 px | 120 | 97.18 ms | 98.48 ms | 143.44 ms | 100% | 0% (0) | 0% (0, 0) |
+| CondA_NoTelemetry (T2) | A. No Telemetry (Pure Workload) | VALID | 10.004s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 4651 | 4809 | 158 | 15.79 FPS | 7773 px | 120 | 154.4 ms | 158.59 ms | 256.73 ms | 100% | 0% (0) | 0% (0, 0) |
+| CondA_NoTelemetry (T3) | A. No Telemetry (Pure Workload) | VALID | 10.008s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 4874 | 5058 | 184 | 18.39 FPS | 7734 px | 120 | 138.72 ms | 138.99 ms | 197.85 ms | 100% | 0% (0) | 0% (0, 0) |
+| CondA_NoTelemetry (T4) | A. No Telemetry (Pure Workload) | VALID | 10.01s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 5163 | 5414 | 251 | 25.07 FPS | 8040 px | 120 | 102.09 ms | 92.38 ms | 158.99 ms | 100% | 0% (0) | 0% (0, 0) |
+| CondA_NoTelemetry (T5) | A. No Telemetry (Pure Workload) | VALID | 10.01s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 5544 | 5818 | 274 | 27.37 FPS | 8053 px | 120 | 95.05 ms | 94.08 ms | 133.9 ms | 100% | 0% (0) | 0% (0, 0) |
+| CondB_CpuOnly (T1) | B. CPU Telemetry Only | VALID | 10.001s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 5868 | 5938 | 70 | 7 FPS | 4200 px | 113 | 401.66 ms | 340.86 ms | 768.48 ms | 100% | 17.4% (24) | 0% (0, 0) |
+| CondB_CpuOnly (T2) | B. CPU Telemetry Only | VALID | 10.001s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 5982 | 6060 | 78 | 7.8 FPS | 5360 px | 120 | 388.85 ms | 411.22 ms | 557.62 ms | 100% | 17.6% (24) | 0% (0, 0) |
+| CondB_CpuOnly (T3) | B. CPU Telemetry Only | VALID | 10.01s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6102 | 6179 | 77 | 7.69 FPS | 5187 px | 116 | 389.99 ms | 378.99 ms | 590.05 ms | 100% | 18.5% (24) | 0% (0, 0) |
+| CondB_CpuOnly (T4) | B. CPU Telemetry Only | VALID | 10.001s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6226 | 6301 | 75 | 7.5 FPS | 5040 px | 119 | 392.57 ms | 383.17 ms | 608.37 ms | 100% | 17.6% (24) | 0% (0, 0) |
+| CondB_CpuOnly (T5) | B. CPU Telemetry Only | VALID | 10.003s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6345 | 6434 | 89 | 8.9 FPS | 5627 px | 120 | 365.71 ms | 385.88 ms | 580.92 ms | 100% | 17.2% (24) | 0% (0, 0) |
+| CondC_GpuOnly (T1) | C. GPU Telemetry Only | VALID | 10.005s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6472 | 6524 | 52 | 5.2 FPS | 3440 px | 88 | 567.09 ms | 581.18 ms | 847.89 ms | 100% | 0% (0) | 0% (1, 47) |
+| CondC_GpuOnly (T2) | C. GPU Telemetry Only | VALID | 10.006s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6563 | 6613 | 50 | 5 FPS | 3240 px | 86 | 555.51 ms | 465.22 ms | 995.63 ms | 100% | 0% (0) | 0.8% (1, 47) |
+| CondC_GpuOnly (T3) | C. GPU Telemetry Only | VALID | 10.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6654 | 6706 | 52 | 5.19 FPS | 3560 px | 91 | 512.16 ms | 483.69 ms | 917.54 ms | 100% | 0% (0) | 0% (1, 47) |
+| CondC_GpuOnly (T4) | C. GPU Telemetry Only | VALID | 10.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6755 | 6806 | 51 | 5.09 FPS | 3440 px | 98 | 491.36 ms | 478.09 ms | 875.21 ms | 100% | 0% (0) | 0.7% (1, 47) |
+| CondC_GpuOnly (T5) | C. GPU Telemetry Only | VALID | 10.012s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6844 | 6896 | 52 | 5.19 FPS | 3440 px | 88 | 551.19 ms | 556.06 ms | 839.64 ms | 100% | 0% (0) | 0.8% (1, 47) |
+| CondD_BothCpuGpu (T1) | D. CPU + GPU Telemetry | VALID | 10.007s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 6938 | 7068 | 130 | 12.99 FPS | 6933 px | 120 | 224.47 ms | 213.38 ms | 402.35 ms | 100% | 23.8% (1) | 0% (1, 47) |
+| CondD_BothCpuGpu (T2) | D. CPU + GPU Telemetry | VALID | 10.005s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 7200 | 7382 | 182 | 18.19 FPS | 7933 px | 120 | 166.86 ms | 163.28 ms | 265.17 ms | 100% | 15.7% (1) | 0% (1, 47) |
+| CondD_BothCpuGpu (T3) | D. CPU + GPU Telemetry | VALID | 10.005s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 7502 | 7706 | 204 | 20.39 FPS | 8000 px | 120 | 128.09 ms | 110.65 ms | 192.7 ms | 100% | 16.3% (1) | 0% (1, 47) |
+| CondD_BothCpuGpu (T4) | D. CPU + GPU Telemetry | VALID | 10.004s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 7832 | 8018 | 186 | 18.59 FPS | 7947 px | 120 | 142.63 ms | 146.2 ms | 184.81 ms | 100% | 19.2% (1) | 0% (1, 47) |
+| CondD_BothCpuGpu (T5) | D. CPU + GPU Telemetry | VALID | 10.008s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2353 | 8133 | 8325 | 192 | 19.18 FPS | 7880 px | 120 | 165.56 ms | 162.13 ms | 260.77 ms | 100% | 14.9% (1) | 0% (1, 47) |
 
 ---
 
-## 2. [IMPLEMENTED] Instrumentation Decoupling Architecture
-- **Workload Generation Isolation**: Automated continuous swipe gestures execute in an unblocked loop with a calibrated pacing cadence (fixed ~250ms interval). Actual swipe count and swipe cadence (swipes/sec) are explicitly recorded per trial.
-- **Telemetry Background Execution**: CPU time delta tracking and Windows \\GPU Engine(*)\\Utilization Percentage counter queries run on a dedicated asynchronous task (Task.Run), completely isolated from the workload loop.
-- **Presentation Frame Source (Presented FPS)**: Derived strictly from dumpsys SurfaceFlinger --timestats -dump (	otalFrames / ActualDurationSec).
-- **AOSP 120-Record Buffer Disambiguation**: Resolved the circular buffer artifact where dumpsys gfxinfo framestats truncates at 120 frames (kFrameHistorySize = 120). gfxinfo is now exclusively utilized for latency distribution (P50, P90, P99) and Jank % across the captured buffer window.
+## 2. [IMPLEMENTED] Benchmark Architecture & Correctness Guardrails
+- **Canonical In-App Workload Generator (com.tabletdroid.benchmark)**: Replaced non-deterministic db shell input swipe with an internal Android Choreographer-driven smooth scrolling engine maintaining constant velocity (800 px/s) over a fixed set of 100 rich UI cards.
+- **Exact Target Layer Extraction**: SurfaceFlinger timestats specifically resolves the layer com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#*, eliminating non-target system layers and splash screen artifacts.
+- **Fail-Closed Verification Gates**: Every trial strictly validates Target App Installation, SurfaceFlinger Layer Discovery, Gfxinfo Framestats Availability, and Background Telemetry Sample Acquisition.
+- **Decoupled Out-of-Process Runspace Telemetry**: Telemetry worker runs in an independent PowerShell Runspace with in-memory thread synchronization, avoiding threadpool contention and capturing genuine Windows performance counters (\\GPU Engine(*)\\Utilization Percentage).
 
 ---
 
-## 3. [INFERENCE] Observer Effect & Characterization Analysis
+## 3. [INFERENCE] Workload Reproducibility & Findings
+### 3.1 Observer Effect Impact
+- **Pure Workload (No Telemetry)**: Presented FPS = **23.67 FPS**, Distance = **8000 px**
+- **Full Telemetry (CPU + GPU)**: Presented FPS = **18.59 FPS**, Distance = **7933 px**
+- **Telemetry Impact Delta**: FPS Delta: **-5.08 FPS**, Distance Delta: **-67 px**
 
-### 3.1 Observer Effect Impact on Cadence and Frame Rate
-- **Pure Workload (No Telemetry)**: Presented FPS = **4.03 FPS**, Cadence = **0.49 sw/s**, Duration = **11.27s**
-- **Full Telemetry (CPU + GPU)**: Presented FPS = **6.12 FPS**, Cadence = **0.41 sw/s**, Duration = **12.22s**
-- **Telemetry Impact Delta**: Presented FPS Delta: **2.09 FPS**, Cadence Delta: **-0.08 sw/s**, Duration Delta: **0.95s**
-
-> **Conclusion**: **meaningful difference** detected. Observer overhead measured at 2.09 FPS.
+> **Conclusion**: **meaningful difference** detected with -5.08 FPS delta.
 
 ---
 
 ## 4. [OPEN] Residual Architectural Hypotheses
-1. **ASG Ring Buffer & Shared Memory Transport [HYPOTHESIS]**: Host-guest transport throughput (hw.gltransport=pipe vs sg) remains an open hypothesis pending direct empirical profiling.
-2. **Host Compositor / ANGLE / Direct3D11 Presentation Pipeline**: Host-side frame presentation and texture synchronization overhead.
+1. **ASG Transport Throughput & Ring Buffer Protocol [OPEN / HYPOTHESIS]**: Host-guest transport protocol remains an open hypothesis pending direct empirical profiling.
+2. **Host Compositor / ANGLE / D3D11 Texture Pipeline**: Host-side presentation overhead.
 
 ---
 
 ## 5. [DECISION] Next Phase Execution
-- Standardize all future benchmark measurements on the decoupled telemetry runner and SurfaceFlinger --timestats Presented FPS source.
-- Maintain empirical rigor before committing to custom zero-copy renderer implementations.
+- All future TabletDroid v0.1 performance characterization and A/B experiments are officially standardized on com.tabletdroid.benchmark.
+- Proceed to ASG and host compositor transport analysis with verified deterministic probe.

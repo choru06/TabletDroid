@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TabletDroid Benchmark</string>
+    <string name="title_idle">Status: IDLE</string>
+    <string name="btn_start">START BENCHMARK</string>
+    <string name="btn_reset">RESET</string>
+</resources>

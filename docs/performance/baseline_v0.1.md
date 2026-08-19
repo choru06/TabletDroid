@@ -1,6 +1,7 @@
-﻿# TabletDroid v0.1 Performance Baseline Benchmark
+# TabletDroid v0.1 Performance Baseline Benchmark (HISTORICAL / NON-CANONICAL)
 
-- **Timestamp**: 2026-08-20 00:02:17
+> [!NOTE]
+> **HISTORICAL / NON-CANONICAL RECORD**: This baseline used external applications (`com.instagram.android`) and legacy swipe scripts. As of commit `c89a0b1`+, all canonical TabletDroid performance evaluation is standardized on `com.tabletdroid.benchmark` (see [canonical_benchmark_workload.md](file:///c:/Users/o1o6o/Documents/Dev/TabletDroid/docs/performance/canonical_benchmark_workload.md)).
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **WHPX Accelerator**: Active & Operational
 - **Target App**: com.instagram.android
