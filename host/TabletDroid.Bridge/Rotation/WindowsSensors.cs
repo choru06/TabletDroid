@@ -34,6 +34,17 @@ public class DebouncedOrientationWatcher : IWindowsOrientationWatcher
         {
             if (_isRunning) return;
             _isRunning = true;
+
+            try
+            {
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+                // 초기 현재 디스플레이 방향 감지
+                CheckCurrentDisplayOrientation();
+            }
+            catch
+            {
+                // Fallback if SystemEvents is restricted
+            }
         }
     }
 
@@ -45,6 +56,44 @@ public class DebouncedOrientationWatcher : IWindowsOrientationWatcher
             _isRunning = false;
             _debounceTimer?.Dispose();
             _debounceTimer = null;
+
+            try
+            {
+                Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            }
+            catch {}
+        }
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        CheckCurrentDisplayOrientation();
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+    private const int SM_CXSCREEN = 0;
+    private const int SM_CYSCREEN = 1;
+
+    private void CheckCurrentDisplayOrientation()
+    {
+        try
+        {
+            int width = GetSystemMetrics(SM_CXSCREEN);
+            int height = GetSystemMetrics(SM_CYSCREEN);
+
+            if (width <= 0) width = 1920;
+            if (height <= 0) height = 1200;
+
+            var detected = (width >= height)
+                ? DeviceOrientation.OrientationNatural      // 가로 (Landscape 1920x1200)
+                : DeviceOrientation.OrientationRight90;    // 세로 (Portrait 1200x1920)
+
+            OnRawOrientationDetected(detected);
+        }
+        catch
+        {
+            // P/Invoke fallback
         }
     }
 

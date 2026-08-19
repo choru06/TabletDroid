@@ -63,31 +63,22 @@ public class RotationBridge : IRotationBridge
             return;
         }
 
-        // 2. v0.1 Dev/Stock AVD: ADB shell settings를 통한 정확한 정책 제어
+        // 2. v0.1 Dev/Stock AVD: ADB shell settings를 통한 정확한 물리 회전 주입
         if (_adbClient != null)
         {
             try
             {
-                if (policy == OrientationPolicy.Auto)
+                var rotationVal = orientation switch
                 {
-                    // Auto 모드: 센서 자동 회전 활성화
-                    await _adbClient.ExecuteShellCommandAsync(deviceSerial, "settings put system accelerometer_rotation 1");
-                }
-                else
-                {
-                    // 고정 각도 모드: 자동 회전 비활성화 후 user_rotation 주입
-                    var rotationVal = orientation switch
-                    {
-                        DeviceOrientation.OrientationNatural => 0,      // 0도 (가로)
-                        DeviceOrientation.OrientationRight90 => 1,     // 90도 (세로)
-                        DeviceOrientation.OrientationInverted180 => 2, // 180도 (역가로)
-                        DeviceOrientation.OrientationLeft270 => 3,     // 270도 (역세로)
-                        _ => 0
-                    };
+                    DeviceOrientation.OrientationNatural => 0,      // 0도 (가로)
+                    DeviceOrientation.OrientationRight90 => 1,     // 90도 (세로)
+                    DeviceOrientation.OrientationInverted180 => 2, // 180도 (역가로)
+                    DeviceOrientation.OrientationLeft270 => 3,     // 270도 (역세로)
+                    _ => 0
+                };
 
-                    await _adbClient.ExecuteShellCommandAsync(deviceSerial, "settings put system accelerometer_rotation 0");
-                    await _adbClient.ExecuteShellCommandAsync(deviceSerial, $"settings put system user_rotation {rotationVal}");
-                }
+                await _adbClient.ExecuteShellCommandAsync(deviceSerial, "settings put system accelerometer_rotation 0");
+                await _adbClient.ExecuteShellCommandAsync(deviceSerial, $"settings put system user_rotation {rotationVal}");
                 return;
             }
             catch (Exception ex)

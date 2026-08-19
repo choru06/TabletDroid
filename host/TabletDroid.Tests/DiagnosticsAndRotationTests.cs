@@ -48,7 +48,7 @@ public class DiagnosticsAndRotationTests
     }
 
     [Fact]
-    public async Task RotationBridge_AppliesAutoAccelerometerRotation_WhenPolicyIsAuto()
+    public async Task RotationBridge_AppliesUserRotation_WhenSynchronizingPhysicalOrientation()
     {
         // Arrange
         var mockAdb = new Mock<IAdbClient>();
@@ -58,11 +58,12 @@ public class DiagnosticsAndRotationTests
 
         var bridge = new RotationBridge(mockAdb.Object, mockConsole.Object, mockGuest.Object);
 
-        // Act
+        // Act (Landscape)
         await bridge.SetOrientationAsync(DeviceOrientation.OrientationNatural, OrientationPolicy.Auto, "emulator-5554");
 
         // Assert
-        mockAdb.Verify(a => a.ExecuteShellCommandAsync("emulator-5554", "settings put system accelerometer_rotation 1", It.IsAny<CancellationToken>()), Times.Once);
+        mockAdb.Verify(a => a.ExecuteShellCommandAsync("emulator-5554", "settings put system accelerometer_rotation 0", It.IsAny<CancellationToken>()), Times.Once);
+        mockAdb.Verify(a => a.ExecuteShellCommandAsync("emulator-5554", "settings put system user_rotation 0", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
