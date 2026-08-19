@@ -1,11 +1,11 @@
 ﻿# TabletDroid v0.1 Win32 Window Embedding A/B Benchmark Report
 
-- **Timestamp**: 2026-08-20 00:32:17
+- **Timestamp**: 2026-08-20 00:34:44
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **WHPX Accelerator**: Active & Operational
 - **Target App**: com.instagram.android
 - **Emulator Serial**: emulator-5554
-- **Benchmark Mode**: All (Trials per condition: 1)
+- **Benchmark Mode**: Standalone (Trials per condition: 1)
 
 ---
 
@@ -13,10 +13,8 @@
 
 | Test Scenario | Mode | Avg FPS | Avg FrameTime | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | QEMU CPU | QEMU RAM | GPU 3D | GPU Copy | Frames |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **1920x1200 (2.30M (100%))** | **Standalone** | **15.5** | 64.47 ms | 68.57 ms | 84.61 ms | 102.35 ms | 99.2% | 18.7% | 1553.6 MB | 0% | 0% | 120 |
-| **1280x800 (1.02M (44%))** | **Standalone** | **7** | 141.94 ms | 160.03 ms | 160.03 ms | 160.03 ms | 100% | 7.9% | 1579.2 MB | 0% | 0% | 2 |
-| **1920x1200 (2.30M (100%))** | **Embedded** | **13** | 76.72 ms | 72.91 ms | 114.84 ms | 213.97 ms | 99.2% | 21% | 1616.8 MB | 0% | 0% | 120 |
-| **1280x800 (1.02M (44%))** | **Embedded** | **5.9** | 169.39 ms | 270.33 ms | 270.33 ms | 270.33 ms | 100% | 7.8% | 1643.6 MB | 0% | 0% | 2 |
+| **1920x1200 (2.30M (100%))** | **Standalone** | **23.3** | 42.86 ms | 49.03 ms | 68.43 ms | 85.24 ms | 100% | 13.8% | 1585.2 MB | 0% | 0% | 120 |
+| **1280x800 (1.02M (44%))** | **Standalone** | **4** | 246.92 ms | 259.38 ms | 259.38 ms | 259.38 ms | 100% | 7.5% | 1614.8 MB | 0% | 0% | 2 |
 
 ---
 
@@ -30,15 +28,6 @@
 
 ## 3. [INFERENCE] A/B Hypothesis Evaluation
 
-### 3.1 1920x1200 Comparison (Standalone vs Embedded)
-- **Standalone 1920x1200 FPS**: 15.5 FPS (64.47 ms)
-- **Embedded 1920x1200 FPS**: 13 FPS (76.72 ms)
-- **FPS Delta**: -2.5 FPS
-
-> **Conclusion**:
-> The framerates between Standalone and Win32 SetParent Embedded windows are **virtually identical** (Delta: -2.5 FPS).
-> This **disproves the hypothesis that SetParent embedding solves the rendering bottleneck**.
-> SetParent Win32 embedding is an effective **UX Integration mechanism** (clean borderless embedding inside Host UI), but the 1920x1200 ~10-15fps bottleneck resides inside the guest rendering / gfxstream / SurfaceFlinger presentation pipeline.
 
 ---
 

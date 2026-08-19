@@ -138,7 +138,15 @@ public class AndroidEmulatorBackend : IRuntimeBackend
             _logger?.Log(LogCategory.Runtime, "Triggering GuestAgent Service start via ADB...");
             await _adbClient.StartGuestAgentServiceAsync(_deviceSerial, ct);
 
-            // 5. Emulator Console 연결
+            // 5. SurfaceFlinger 저지연/버퍼링 최적화 프로퍼티 주입
+            try
+            {
+                await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "setprop debug.sf.latch_unsignaled 1", ct);
+                await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "setprop debug.sf.disable_backpressure 1", ct);
+            }
+            catch {}
+
+            // 6. Emulator Console 연결
             await _consoleClient.ConnectAsync("127.0.0.1", config.ConsolePort, ct: ct);
 
             // 6. GuestAgent 연결 및 Handshake 대기 (백그라운드 비동기)

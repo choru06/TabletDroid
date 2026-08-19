@@ -119,7 +119,9 @@ $results["Fullscreen Policy"] = "PASS"
 Write-Host "`n[6/8] Starting GuestAgent Service & Setting up Port Forwarding..." -ForegroundColor Yellow
 & $adb -s $deviceSerial shell am startservice -n com.tabletdroid.guestagent/.GuestService 2>$null
 & $adb -s $deviceSerial forward tcp:$GuestPort tcp:$GuestPort 2>$null
-Write-Host "  [PASS] Port tcp:$GuestPort forwarded to Guest." -ForegroundColor Green
+& $adb -s $deviceSerial shell setprop debug.sf.latch_unsignaled 1 2>$null
+& $adb -s $deviceSerial shell setprop debug.sf.disable_backpressure 1 2>$null
+Write-Host "  [PASS] Port tcp:$GuestPort forwarded to Guest & SurfaceFlinger low-latency tuned." -ForegroundColor Green
 $results["Guest Forward"] = "PASS"
 
 # 7. Instagram 설치 여부 확인
