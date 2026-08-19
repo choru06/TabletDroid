@@ -19,5 +19,10 @@ public class RuntimeConfiguration
     public bool NoSnapshotSave { get; set; } = true;
     public string GpuMode { get; set; } = "host";
 
+    /// <summary>
+    /// Experimental: SurfaceFlinger 저지연 버퍼링 최적화 활성화 여부
+    /// </summary>
+    public bool EnableSurfaceFlingerLowLatencyTuning { get; set; } = false;
+
     public int BootTimeoutSeconds { get; set; } = 90;
 }

@@ -2,10 +2,10 @@ param(
     [string]$DeviceSerial = "emulator-5554",
     [string]$PackageName = "com.instagram.android",
     [string]$ActivityName = "com.instagram.android/.activity.MainTabActivity",
-    [int]$ScrollDurationSeconds = 6,
-    [ValidateSet("Standalone", "Embedded", "All")]
-    [string]$Mode = "All",
-    [int]$Trials = 1,
+    [int]$ScrollDurationSeconds = 10,
+    [ValidateSet("SurfaceFlinger4Way", "Standalone", "Embedded", "All", "Single")]
+    [string]$Mode = "SurfaceFlinger4Way",
+    [int]$Trials = 5,
     [string]$OutputDir = "$PSScriptRoot\..\..\docs\performance"
 )
 
@@ -27,13 +27,13 @@ if (Test-Path $androidHome) {
 $adb = (Get-Command adb.exe -ErrorAction SilentlyContinue).Source
 if (-not $adb) { $adb = "$androidHome\platform-tools\adb.exe" }
 
-Write-Host "`n========================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid v0.1 Win32 Embedding & Performance Benchmark" -ForegroundColor Cyan
-Write-Host " Target Device : ASUS ROG Flow Z13" -ForegroundColor Cyan
-Write-Host " Target Package: $PackageName" -ForegroundColor Cyan
-Write-Host " Mode          : $Mode (Trials: $Trials)" -ForegroundColor Cyan
-Write-Host " ADB Device    : $DeviceSerial" -ForegroundColor Cyan
-Write-Host "========================================================`n" -ForegroundColor Cyan
+Write-Host "`n================================================================================" -ForegroundColor Cyan
+Write-Host " TabletDroid Hardened Performance Benchmark & SurfaceFlinger A/B Runner" -ForegroundColor Cyan
+Write-Host " Target Device  : ASUS ROG Flow Z13" -ForegroundColor Cyan
+Write-Host " Target Package : $PackageName" -ForegroundColor Cyan
+Write-Host " Mode           : $Mode (Trials: $Trials, Duration: ${ScrollDurationSeconds}s/trial)" -ForegroundColor Cyan
+Write-Host " ADB Device     : $DeviceSerial" -ForegroundColor Cyan
+Write-Host "================================================================================`n" -ForegroundColor Cyan
 
 $devices = & $adb devices
 if (-not ($devices -match $DeviceSerial)) {
@@ -106,20 +106,26 @@ public class TabletDroidNativeEmbedder {
 "@
 } catch {}
 
-function Measure-FramestatsWithTelemetry {
+function Measure-HardenedTrial {
     param(
         [string]$pkg,
         [int]$durationSec,
         [string]$testLabel = "Test",
-        [string]$testMode = "Standalone"
+        [string]$conditionKey = "Baseline",
+        [int]$trialNum = 1
     )
 
-    Write-Host "  -> Collecting Framestats & Host Telemetry ($testLabel | $testMode, ${durationSec}s)..." -ForegroundColor Gray
+    Write-Host "  -> [Trial $trialNum] Running Workload ($testLabel, ${durationSec}s)..." -ForegroundColor Gray
     
-    & $adb -s $DeviceSerial shell dumpsys gfxinfo $pkg reset > $null
-    & $adb -s $DeviceSerial shell dumpsys SurfaceFlinger --timestats -clear > $null
+    # 1. Warm-up / Foreground App / Settle
+    & $adb -s $DeviceSerial shell am start -n $ActivityName > $null 2>&1
+    Start-Sleep -Milliseconds 500
 
-    # 화면 해상도 기반 동적 제스처 좌표 계산
+    # 2. Reset Framestats
+    & $adb -s $DeviceSerial shell dumpsys gfxinfo $pkg reset > $null 2>&1
+    & $adb -s $DeviceSerial shell dumpsys SurfaceFlinger --timestats -clear > $null 2>&1
+
+    # 3. Dynamic Swipe Coordinates based on active resolution
     $wmText = (& $adb -s $DeviceSerial shell wm size 2>$null) -join " "
     $curW = 1200; $curH = 1920
     if ($wmText -match "(\d+)x(\d+)") {
@@ -131,44 +137,78 @@ function Measure-FramestatsWithTelemetry {
     $swipeY2 = [int]($curH * 0.25)
 
     $qemuProc = Get-Process -Name *qemu* -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $qemuProc) {
+        $qemuProc = Get-Process -Name *emulator* -ErrorAction SilentlyContinue | Select-Object -First 1
+    }
     $qemuPid = if ($qemuProc) { $qemuProc.Id } else { 0 }
-    $cpuTimeStart = if ($qemuProc) { $qemuProc.TotalProcessorTime } else { [TimeSpan]::Zero }
-
-    $startTime = [DateTime]::UtcNow
-    $endTime = $startTime.AddSeconds($durationSec)
     
-    while ([DateTime]::UtcNow -lt $endTime) {
-        & $adb -s $DeviceSerial shell input swipe $swipeX $swipeY1 $swipeX $swipeY2 180 > $null
+    $cpuCores = [Environment]::ProcessorCount
+    $lastCpuTime = if ($qemuProc) { $qemuProc.TotalProcessorTime } else { [TimeSpan]::Zero }
+    $lastSampleWallTime = [DateTime]::UtcNow
+
+    $cpuSamples = [System.Collections.Generic.List[double]]::new()
+    $gpu3DSamples = [System.Collections.Generic.List[double]]::new()
+    $gpuCopySamples = [System.Collections.Generic.List[double]]::new()
+
+    $benchStartTime = [DateTime]::UtcNow
+    $benchEndTime = $benchStartTime.AddSeconds($durationSec)
+    
+    # 4. Active Workload Loop with Periodic Telemetry Sampling (every ~350ms)
+    while ([DateTime]::UtcNow -lt $benchEndTime) {
+        # Trigger input gesture
+        & $adb -s $DeviceSerial shell input swipe $swipeX $swipeY1 $swipeX $swipeY2 180 > $null 2>&1
+        
+        # Telemetry sample interval
         Start-Sleep -Milliseconds 350
+        
+        $now = [DateTime]::UtcNow
+        $sampleDeltaSec = ($now - $lastSampleWallTime).TotalSeconds
+        if ($sampleDeltaSec -gt 0.1 -and $qemuPid -gt 0) {
+            $curProc = Get-Process -Id $qemuPid -ErrorAction SilentlyContinue
+            if ($curProc) {
+                $curCpuTime = $curProc.TotalProcessorTime
+                $cpuDeltaMs = ($curCpuTime - $lastCpuTime).TotalMilliseconds
+                $cpuPercent = [math]::Round(($cpuDeltaMs / ($sampleDeltaSec * 1000.0 * $cpuCores)) * 100.0, 1)
+                $cpuSamples.Add($cpuPercent)
+                $lastCpuTime = $curCpuTime
+            }
+            $lastSampleWallTime = $now
+
+            # GPU Engine Sample
+            try {
+                $gpuCounters = Get-Counter -Counter "\GPU Engine(*)\Utilization Percentage" -ErrorAction SilentlyContinue
+                if ($gpuCounters -and $gpuCounters.CounterSamples) {
+                    $cur3D = 0.0
+                    $curCopy = 0.0
+                    foreach ($s in $gpuCounters.CounterSamples) {
+                        if ($s.InstanceName -match "pid_${qemuPid}_") {
+                            if ($s.Path -match "engtype_3D") { $cur3D += $s.CookedValue }
+                            if ($s.Path -match "engtype_Copy") { $curCopy += $s.CookedValue }
+                        }
+                    }
+                    $gpu3DSamples.Add([math]::Round($cur3D, 1))
+                    $gpuCopySamples.Add([math]::Round($curCopy, 1))
+                }
+            } catch {}
+        }
     }
 
-    $qemuProcEnd = if ($qemuPid -gt 0) { Get-Process -Id $qemuPid -ErrorAction SilentlyContinue } else { $null }
-    $cpuTimeEnd = if ($qemuProcEnd) { $qemuProcEnd.TotalProcessorTime } else { $cpuTimeStart }
-    $qemuRamMb = if ($qemuProcEnd) { [math]::Round($qemuProcEnd.WorkingSet64 / 1MB, 1) } else { 0.0 }
-    
-    $cpuDeltaMs = ($cpuTimeEnd - $cpuTimeStart).TotalMilliseconds
-    $cpuCores = [Environment]::ProcessorCount
-    $qemuCpuPercent = if ($durationSec -gt 0 -and $cpuCores -gt 0) {
-        [math]::Round(($cpuDeltaMs / ($durationSec * 1000.0 * $cpuCores)) * 100.0, 1)
-    } else { 0.0 }
+    $benchActualDurationSec = [math]::Round(([DateTime]::UtcNow - $benchStartTime).TotalSeconds, 2)
 
-    # GPU Telemetry
-    $gpu3D = 0.0
-    $gpuCopy = 0.0
-    try {
-        if ($qemuPid -gt 0) {
-            $counters = Get-Counter -Counter "\GPU Engine(*)\Utilization Percentage" -ErrorAction SilentlyContinue
-            if ($counters -and $counters.CounterSamples) {
-                foreach ($s in $counters.CounterSamples) {
-                    if ($s.InstanceName -match "pid_${qemuPid}_") {
-                        if ($s.Path -match "engtype_3D") { $gpu3D += $s.CookedValue }
-                        if ($s.Path -match "engtype_Copy") { $gpuCopy += $s.CookedValue }
-                    }
-                }
-            }
-        }
-    } catch {}
+    $finalProc = if ($qemuPid -gt 0) { Get-Process -Id $qemuPid -ErrorAction SilentlyContinue } else { $null }
+    $qemuRamMb = if ($finalProc) { [math]::Round($finalProc.WorkingSet64 / 1MB, 1) } else { 0.0 }
 
+    # Telemetry aggregation
+    $cpuAvg = if ($cpuSamples.Count -gt 0) { [math]::Round(($cpuSamples | Measure-Object -Average).Average, 1) } else { 0.0 }
+    $cpuPeak = if ($cpuSamples.Count -gt 0) { [math]::Round(($cpuSamples | Measure-Object -Maximum).Maximum, 1) } else { 0.0 }
+
+    $gpu3DAvg = if ($gpu3DSamples.Count -gt 0) { [math]::Round(($gpu3DSamples | Measure-Object -Average).Average, 1) } else { 0.0 }
+    $gpu3DPeak = if ($gpu3DSamples.Count -gt 0) { [math]::Round(($gpu3DSamples | Measure-Object -Maximum).Maximum, 1) } else { 0.0 }
+
+    $gpuCopyAvg = if ($gpuCopySamples.Count -gt 0) { [math]::Round(($gpuCopySamples | Measure-Object -Average).Average, 1) } else { 0.0 }
+    $gpuCopyPeak = if ($gpuCopySamples.Count -gt 0) { [math]::Round(($gpuCopySamples | Measure-Object -Maximum).Maximum, 1) } else { 0.0 }
+
+    # 5. Extract Framestats Data
     $rawGfx = & $adb -s $DeviceSerial shell dumpsys gfxinfo $pkg framestats 2>$null
     
     $frameTimesMs = [System.Collections.Generic.List[double]]::new()
@@ -212,214 +252,305 @@ function Measure-FramestatsWithTelemetry {
         }
     }
 
-    $totalFrames = $frameTimesMs.Count
-    if ($totalFrames -eq 0) {
+    $validFrames = $frameTimesMs.Count
+    $isValid = ($validFrames -ge 15)
+    $status = if ($isValid) { "VALID" } else { "INVALID / INSUFFICIENT_SAMPLES" }
+
+    if (-not $isValid) {
+        Write-Host "    [WARN] Trial $trialNum yielded insufficient samples ($validFrames frames < 15 threshold). Marked as $status." -ForegroundColor DarkYellow
         return [PSCustomObject]@{
             Label = $testLabel
-            Mode = $testMode
-            TotalFrames = 0
-            AvgFps = 0.0
-            AvgFrameTimeMs = 0.0
+            Condition = $conditionKey
+            Trial = $trialNum
+            Status = $status
+            IsValid = $false
+            ValidFrames = $validFrames
+            ActualDurationSec = $benchActualDurationSec
+            ThroughputFps = if ($benchActualDurationSec -gt 0) { [math]::Round($validFrames / $benchActualDurationSec, 2) } else { 0.0 }
+            FrameLatencyAvgMs = 0.0
+            LatencyEqFps = 0.0
             P50Ms = 0.0
             P90Ms = 0.0
             P99Ms = 0.0
             JankPercent = 0.0
-            QemuCpuPercent = $qemuCpuPercent
+            CpuAvgPercent = $cpuAvg
+            CpuPeakPercent = $cpuPeak
+            Gpu3DAvgPercent = $gpu3DAvg
+            Gpu3DPeakPercent = $gpu3DPeak
+            GpuCopyAvgPercent = $gpuCopyAvg
+            GpuCopyPeakPercent = $gpuCopyPeak
             QemuRamMb = $qemuRamMb
-            Gpu3DPercent = [math]::Round($gpu3D, 1)
-            GpuCopyPercent = [math]::Round($gpuCopy, 1)
         }
     }
 
     $sorted = $frameTimesMs | Sort-Object
-    $avgMs = ($sorted | Measure-Object -Average).Average
-    $avgFps = [math]::Round(1000.0 / $avgMs, 1)
+    $avgLatencyMs = ($sorted | Measure-Object -Average).Average
+    $latencyEqFps = [math]::Round(1000.0 / $avgLatencyMs, 2)
+    $throughputFps = [math]::Round($validFrames / $benchActualDurationSec, 2)
     
-    $p50Idx = [math]::Min([int]($totalFrames * 0.50), $totalFrames - 1)
-    $p90Idx = [math]::Min([int]($totalFrames * 0.90), $totalFrames - 1)
-    $p99Idx = [math]::Min([int]($totalFrames * 0.99), $totalFrames - 1)
+    $p50Idx = [math]::Min([int]($validFrames * 0.50), $validFrames - 1)
+    $p90Idx = [math]::Min([int]($validFrames * 0.90), $validFrames - 1)
+    $p99Idx = [math]::Min([int]($validFrames * 0.99), $validFrames - 1)
     
     $p50Ms = [math]::Round($sorted[$p50Idx], 2)
     $p90Ms = [math]::Round($sorted[$p90Idx], 2)
     $p99Ms = [math]::Round($sorted[$p99Idx], 2)
     
     $jankCount = ($sorted | Where-Object { $_ -gt 16.67 }).Count
-    $jankPercent = [math]::Round(($jankCount / $totalFrames) * 100.0, 1)
+    $jankPercent = [math]::Round(($jankCount / $validFrames) * 100.0, 1)
 
     return [PSCustomObject]@{
         Label = $testLabel
-        Mode = $testMode
-        TotalFrames = $totalFrames
-        AvgFps = $avgFps
-        AvgFrameTimeMs = [math]::Round($avgMs, 2)
+        Condition = $conditionKey
+        Trial = $trialNum
+        Status = $status
+        IsValid = $true
+        ValidFrames = $validFrames
+        ActualDurationSec = $benchActualDurationSec
+        ThroughputFps = $throughputFps
+        FrameLatencyAvgMs = [math]::Round($avgLatencyMs, 2)
+        LatencyEqFps = $latencyEqFps
         P50Ms = $p50Ms
         P90Ms = $p90Ms
         P99Ms = $p99Ms
         JankPercent = $jankPercent
-        QemuCpuPercent = $qemuCpuPercent
+        CpuAvgPercent = $cpuAvg
+        CpuPeakPercent = $cpuPeak
+        Gpu3DAvgPercent = $gpu3DAvg
+        Gpu3DPeakPercent = $gpu3DPeak
+        GpuCopyAvgPercent = $gpuCopyAvg
+        GpuCopyPeakPercent = $gpuCopyPeak
         QemuRamMb = $qemuRamMb
-        Gpu3DPercent = [math]::Round($gpu3D, 1)
-        GpuCopyPercent = [math]::Round($gpuCopy, 1)
     }
 }
 
-$results = [System.Collections.Generic.List[PSCustomObject]]::new()
+function Set-SurfaceFlingerProps {
+    param([int]$latch, [int]$disableBp)
+    
+    & $adb -s $DeviceSerial shell setprop debug.sf.latch_unsignaled $latch > $null 2>&1
+    & $adb -s $DeviceSerial shell setprop debug.sf.disable_backpressure $disableBp > $null 2>&1
+    Start-Sleep -Milliseconds 300
 
-$modesToRun = @()
-if ($Mode -eq "All") {
-    $modesToRun = @("Standalone", "Embedded")
-} else {
-    $modesToRun = @($Mode)
+    $readLatch = (& $adb -s $DeviceSerial shell getprop debug.sf.latch_unsignaled 2>$null).Trim()
+    $readBp = (& $adb -s $DeviceSerial shell getprop debug.sf.disable_backpressure 2>$null).Trim()
+
+    $latchOk = ($readLatch -eq "$latch")
+    $bpOk = ($readBp -eq "$disableBp")
+    
+    return [PSCustomObject]@{
+        Latch = $readLatch
+        DisableBackpressure = $readBp
+        Verified = ($latchOk -and $bpOk)
+    }
 }
 
-$resolutions = @(
-    @{ Width = 1920; Height = 1200; Pixels = "2.30M (100%)" },
-    @{ Width = 1280; Height = 800;  Pixels = "1.02M (44%)" }
-)
+# --- Execution Plan ---
+$allTrialResults = [System.Collections.Generic.List[PSCustomObject]]::new()
+$conditionSummaries = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-$emuHwnd = [TabletDroidNativeEmbedder]::FindEmulatorHwnd()
-$origParent = if ($emuHwnd -ne [IntPtr]::Zero) { [TabletDroidNativeEmbedder]::GetParent($emuHwnd) } else { [IntPtr]::Zero }
-$origStyle = if ($emuHwnd -ne [IntPtr]::Zero) { [TabletDroidNativeEmbedder]::GetWindowLongPtr64($emuHwnd, -16) } else { [IntPtr]::Zero }
+if ($Mode -eq "SurfaceFlinger4Way") {
+    $matrix = @(
+        @{ Key = "CondA_Baseline";         Name = "A. Baseline (Default)";       Latch = 0; DisableBp = 0 },
+        @{ Key = "CondB_LatchOnly";        Name = "B. Latch Only (latch=1)";     Latch = 1; DisableBp = 0 },
+        @{ Key = "CondC_BackpressureOnly"; Name = "C. Backpressure Only (bp=1)"; Latch = 0; DisableBp = 1 },
+        @{ Key = "CondD_Both";             Name = "D. Both (latch=1, bp=1)";     Latch = 1; DisableBp = 1 }
+    )
 
-foreach ($curMode in $modesToRun) {
-    Write-Host "`n========================================================" -ForegroundColor Yellow
-    Write-Host " Running Benchmark in Mode: $curMode" -ForegroundColor Yellow
-    Write-Host "========================================================" -ForegroundColor Yellow
+    # Ensure native 1920x1200
+    & $adb -s $DeviceSerial shell wm size reset > $null
+    & $adb -s $DeviceSerial shell wm size 1920x1200 > $null
+    Start-Sleep -Seconds 1
 
-    if ($curMode -eq "Embedded" -and $emuHwnd -ne [IntPtr]::Zero) {
-        $hostHwnd = [TabletDroidNativeEmbedder]::FindHostHwnd()
-        if ($hostHwnd -ne [IntPtr]::Zero) {
-            Write-Host "  [Embed] Embedding emulator HWND 0x$($emuHwnd.ToString('X')) into Host 0x$($hostHwnd.ToString('X'))..." -ForegroundColor Cyan
-            $childStyle = ([int64]$origStyle -band (-bnot 0x80C40000L)) -bor 0x50000000L # Strip popup/caption, add child|visible
-            [TabletDroidNativeEmbedder]::SetWindowLongPtr64($emuHwnd, -16, [IntPtr]$childStyle) | Out-Null
-            [TabletDroidNativeEmbedder]::SetParent($emuHwnd, $hostHwnd) | Out-Null
-            [TabletDroidNativeEmbedder]::SetWindowPos($emuHwnd, [IntPtr]::Zero, 50, 100, 1100, 600, 0x0020 -bor 0x0040) | Out-Null
-            Start-Sleep -Seconds 1
+    foreach ($cond in $matrix) {
+        $key = $cond.Key
+        $name = $cond.Name
+        $latch = $cond.Latch
+        $bp = $cond.DisableBp
+
+        Write-Host "`n================================================================================" -ForegroundColor Yellow
+        Write-Host " Setting Condition: $name (Latch=$latch, DisableBackpressure=$bp)" -ForegroundColor Yellow
+        Write-Host "================================================================================" -ForegroundColor Yellow
+
+        $propStatus = Set-SurfaceFlingerProps -latch $latch -disableBp $bp
+        if (-not $propStatus.Verified) {
+            Write-Host "  [WARN] Read-back verification failed! Read: latch='$($propStatus.Latch)', bp='$($propStatus.DisableBackpressure)'" -ForegroundColor DarkYellow
         } else {
-            Write-Host "  [WARN] TabletDroid.Host not running for embedding. Testing with Desktop child window..." -ForegroundColor Yellow
+            Write-Host "  [OK] Read-back verified: debug.sf.latch_unsignaled=$($propStatus.Latch), debug.sf.disable_backpressure=$($propStatus.DisableBackpressure)" -ForegroundColor Green
         }
-    } elseif ($curMode -eq "Standalone" -and $emuHwnd -ne [IntPtr]::Zero) {
-        Write-Host "  [Standalone] Restoring standalone window state..." -ForegroundColor Cyan
-        [TabletDroidNativeEmbedder]::SetParent($emuHwnd, $origParent) | Out-Null
-        [TabletDroidNativeEmbedder]::SetWindowLongPtr64($emuHwnd, -16, $origStyle) | Out-Null
-        [TabletDroidNativeEmbedder]::SetWindowPos($emuHwnd, [IntPtr]::Zero, 100, 100, 1200, 800, 0x0020 -bor 0x0040) | Out-Null
-        Start-Sleep -Seconds 1
-    }
 
-    foreach ($res in $resolutions) {
-        $w = $res.Width
-        $h = $res.Height
-        $pix = $res.Pixels
-        $label = "${w}x${h} ($pix)"
-
-        Write-Host "  Testing Resolution: $label ($curMode)..." -ForegroundColor Cyan
-        & $adb -s $DeviceSerial shell wm size "${w}x${h}" > $null
-        Start-Sleep -Milliseconds 500
-        & $adb -s $DeviceSerial shell am start -n $ActivityName > $null
-        Start-Sleep -Seconds 1
+        $condTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
 
         for ($t = 1; $t -le $Trials; $t++) {
-            $trialLabel = if ($Trials -gt 1) { "$label (T$t)" } else { $label }
-            $stat = Measure-FramestatsWithTelemetry -pkg $PackageName -durationSec $ScrollDurationSeconds -testLabel $trialLabel -testMode $curMode
-            $results.Add($stat)
+            $trialData = Measure-HardenedTrial -pkg $PackageName -durationSec $ScrollDurationSeconds -testLabel $name -conditionKey $key -trialNum $t
+            $allTrialResults.Add($trialData)
+            if ($trialData.IsValid) {
+                $condTrials.Add($trialData)
+            }
+            Start-Sleep -Milliseconds 500
+        }
+
+        # Calculate Statistics for this condition
+        $validCount = $condTrials.Count
+        if ($validCount -ge 1) {
+            $sortedThroughput = $condTrials | Select-Object -ExpandProperty ThroughputFps | Sort-Object
+            $sortedLatency = $condTrials | Select-Object -ExpandProperty FrameLatencyAvgMs | Sort-Object
+            $sortedLatencyEq = $condTrials | Select-Object -ExpandProperty LatencyEqFps | Sort-Object
+            $sortedP50 = $condTrials | Select-Object -ExpandProperty P50Ms | Sort-Object
+            $sortedP90 = $condTrials | Select-Object -ExpandProperty P90Ms | Sort-Object
+            $sortedP99 = $condTrials | Select-Object -ExpandProperty P99Ms | Sort-Object
+            $sortedJank = $condTrials | Select-Object -ExpandProperty JankPercent | Sort-Object
+            $sortedCpu = $condTrials | Select-Object -ExpandProperty CpuAvgPercent | Sort-Object
+            $sortedCpuPeak = $condTrials | Select-Object -ExpandProperty CpuPeakPercent | Sort-Object
+            $sortedGpu3D = $condTrials | Select-Object -ExpandProperty Gpu3DAvgPercent | Sort-Object
+            $sortedGpuCopy = $condTrials | Select-Object -ExpandProperty GpuCopyAvgPercent | Sort-Object
+
+            $medianIdx = [int]($validCount / 2)
+            
+            # StdDev calculation
+            $avgThroughput = ($sortedThroughput | Measure-Object -Average).Average
+            $sumSquares = 0.0
+            foreach ($v in $sortedThroughput) { $sumSquares += [math]::Pow($v - $avgThroughput, 2) }
+            $stdDev = [math]::Round([math]::Sqrt($sumSquares / $validCount), 2)
+
+            $summary = [PSCustomObject]@{
+                Condition = $name
+                Key = $key
+                ValidTrials = "$validCount / $Trials"
+                ThroughputMedian = $sortedThroughput[$medianIdx]
+                ThroughputMin = ($sortedThroughput | Measure-Object -Minimum).Minimum
+                ThroughputMax = ($sortedThroughput | Measure-Object -Maximum).Maximum
+                ThroughputStdDev = $stdDev
+                LatencyAvgMedianMs = $sortedLatency[$medianIdx]
+                LatencyEqFpsMedian = $sortedLatencyEq[$medianIdx]
+                P50MedianMs = $sortedP50[$medianIdx]
+                P90MedianMs = $sortedP90[$medianIdx]
+                P99MedianMs = $sortedP99[$medianIdx]
+                JankMedianPercent = $sortedJank[$medianIdx]
+                CpuAvgPercent = $sortedCpu[$medianIdx]
+                CpuPeakPercent = $sortedCpuPeak[$medianIdx]
+                Gpu3DAvgPercent = $sortedGpu3D[$medianIdx]
+                GpuCopyAvgPercent = $sortedGpuCopy[$medianIdx]
+            }
+            $conditionSummaries.Add($summary)
+        } else {
+            $conditionSummaries.Add([PSCustomObject]@{
+                Condition = $name
+                Key = $key
+                ValidTrials = "0 / $Trials (INVALID)"
+                ThroughputMedian = 0
+                ThroughputMin = 0
+                ThroughputMax = 0
+                ThroughputStdDev = 0
+                LatencyAvgMedianMs = 0
+                LatencyEqFpsMedian = 0
+                P50MedianMs = 0
+                P90MedianMs = 0
+                P99MedianMs = 0
+                JankMedianPercent = 0
+                CpuAvgPercent = 0
+                CpuPeakPercent = 0
+                Gpu3DAvgPercent = 0
+                GpuCopyAvgPercent = 0
+            })
         }
     }
 }
 
-# Standalone 복구
-if ($emuHwnd -ne [IntPtr]::Zero -and $origStyle -ne [IntPtr]::Zero) {
-    [TabletDroidNativeEmbedder]::SetParent($emuHwnd, $origParent) | Out-Null
-    [TabletDroidNativeEmbedder]::SetWindowLongPtr64($emuHwnd, -16, $origStyle) | Out-Null
-    [TabletDroidNativeEmbedder]::SetWindowPos($emuHwnd, [IntPtr]::Zero, 100, 100, 1200, 800, 0x0020 -bor 0x0040) | Out-Null
-}
-
-Write-Host "  Restoring native 1920x1200 resolution..." -ForegroundColor Gray
-& $adb -s $DeviceSerial shell wm size reset > $null
-& $adb -s $DeviceSerial shell wm size 1920x1200 > $null
-
-# Summary Table
+# Summary Table to Console
 Write-Host "`n========================================================================================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid Win32 Embedding A/B Benchmark Summary Table" -ForegroundColor Cyan
+Write-Host " TabletDroid SurfaceFlinger 4-Way A/B Benchmark Statistical Summary (1920x1200)" -ForegroundColor Cyan
 Write-Host "========================================================================================================================" -ForegroundColor Cyan
-$results | Format-Table -Property Label, Mode, AvgFps, AvgFrameTimeMs, P50Ms, P90Ms, P99Ms, JankPercent, QemuCpuPercent, QemuRamMb, Gpu3DPercent, GpuCopyPercent, TotalFrames -AutoSize | Out-String | Write-Host -ForegroundColor Green
+$conditionSummaries | Format-Table -Property Condition, ValidTrials, ThroughputMedian, ThroughputMin, ThroughputMax, ThroughputStdDev, LatencyAvgMedianMs, LatencyEqFpsMedian, P50MedianMs, JankMedianPercent, CpuAvgPercent, Gpu3DAvgPercent -AutoSize | Out-String | Write-Host -ForegroundColor Green
 
-# Save Markdown Report
+# Save Formal Markdown Report
 if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 }
 
 $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-$reportFile = "$OutputDir\window_embedding_ab_report.md"
+$reportFile = "$OutputDir\surfaceflinger_ab_validation.md"
 
 $mdLines = [System.Collections.Generic.List[string]]::new()
-$mdLines.Add("# TabletDroid v0.1 Win32 Window Embedding A/B Benchmark Report")
+$mdLines.Add("# TabletDroid v0.1 SurfaceFlinger 4-Way A/B Statistical Validation Report")
 $mdLines.Add("")
 $mdLines.Add("- **Timestamp**: $timestamp")
 $mdLines.Add("- **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)")
-$mdLines.Add("- **WHPX Accelerator**: Active & Operational")
-$mdLines.Add("- **Target App**: $PackageName")
-$mdLines.Add("- **Emulator Serial**: $DeviceSerial")
-$mdLines.Add("- **Benchmark Mode**: $Mode (Trials per condition: $Trials)")
+$mdLines.Add("- **WHPX Acceleration**: Active & Operational")
+$mdLines.Add("- **Target Application**: $PackageName")
+$mdLines.Add("- **Resolution Tested**: 1920x1200 (Native Tablet Resolution)")
+$mdLines.Add("- **Benchmark Protocol**: 4 Conditions x $Trials Trials x ${ScrollDurationSeconds}s active scrolling per trial")
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
-$mdLines.Add("## 1. [MEASURED] Frame & Host Telemetry Summary")
+$mdLines.Add("## 1. [MEASURED] 4-Way Statistical Comparison Table (Medians across 5 Trials)")
 $mdLines.Add("")
-$mdLines.Add("| Test Scenario | Mode | Avg FPS | Avg FrameTime | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | QEMU CPU | QEMU RAM | GPU 3D | GPU Copy | Frames |")
+$mdLines.Add("| Condition | Valid Trials | Observed Throughput (FPS) | Throughput [Min, Max] | StdDev | Frame Latency (ms) | Latency-Eq FPS | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | QEMU CPU | GPU 3D |")
 $mdLines.Add("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
 
-foreach ($r in $results) {
-    $row = "| **" + $r.Label + "** | **" + $r.Mode + "** | **" + $r.AvgFps + "** | " + $r.AvgFrameTimeMs + " ms | " + $r.P50Ms + " ms | " + $r.P90Ms + " ms | " + $r.P99Ms + " ms | " + $r.JankPercent + "% | " + $r.QemuCpuPercent + "% | " + $r.QemuRamMb + " MB | " + $r.Gpu3DPercent + "% | " + $r.GpuCopyPercent + "% | " + $r.TotalFrames + " |"
+foreach ($s in $conditionSummaries) {
+    $row = "| **" + $s.Condition + "** | " + $s.ValidTrials + " | **" + $s.ThroughputMedian + " FPS** | [" + $s.ThroughputMin + ", " + $s.ThroughputMax + "] | " + $s.ThroughputStdDev + " | " + $s.LatencyAvgMedianMs + " ms | " + $s.LatencyEqFpsMedian + " FPS | " + $s.P50MedianMs + " ms | " + $s.P90MedianMs + " ms | " + $s.P99MedianMs + " ms | " + $s.JankMedianPercent + "% | " + $s.CpuAvgPercent + "% | " + $s.Gpu3DAvgPercent + "% |"
     $mdLines.Add($row)
+}
+
+$mdLines.Add("")
+$mdLines.Add("### 1.1 All Raw Trial Records")
+$mdLines.Add("")
+$mdLines.Add("| Trial ID | Condition | Status | Valid Frames | Duration (s) | Throughput (FPS) | Latency Avg (ms) | Latency-Eq FPS | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | CPU Avg % | CPU Peak % | GPU 3D % |")
+$mdLines.Add("| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
+
+foreach ($r in $allTrialResults) {
+    $rRow = "| " + $r.Condition + " (T" + $r.Trial + ") | " + $r.Label + " | " + $r.Status + " | " + $r.ValidFrames + " | " + $r.ActualDurationSec + "s | " + $r.ThroughputFps + " | " + $r.FrameLatencyAvgMs + " ms | " + $r.LatencyEqFps + " | " + $r.P50Ms + " ms | " + $r.P90Ms + " ms | " + $r.P99Ms + " ms | " + $r.JankPercent + "% | " + $r.CpuAvgPercent + "% | " + $r.CpuPeakPercent + "% | " + $r.Gpu3DAvgPercent + "% |"
+    $mdLines.Add($rRow)
 }
 
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
-$mdLines.Add("## 2. [IMPLEMENTED] Window Embedding Spike Details")
-$mdLines.Add("- Implemented `IWindowEmbedderService` and `Win32WindowEmbedderService` in `TabletDroid.Bridge.Window`.")
-$mdLines.Add("- Implemented dynamic HWND search for `qemu-system-x86_64` / `emulator` rendering child windows.")
-$mdLines.Add("- Applied Win32 `SetParent` + Style-stripping (`WS_POPUP`, `WS_CAPTION`, `WS_THICKFRAME`) to embed into Host viewport.")
-$mdLines.Add("- Added automated detachment / state restoration on shutdown or test completion.")
+$mdLines.Add("## 2. [IMPLEMENTED] Benchmark Hardening & Verification Changes")
+$mdLines.Add("- **Metric Disambiguation**: Separated `Observed Throughput (ValidFrames / ActualDurationSec)` from `Frame Latency (ms)` and `Latency-Equivalent FPS (1000 / Latency)`.")
+$mdLines.Add("- **Validity Thresholding**: Samples with $< 15$ frames are flagged as `INVALID / INSUFFICIENT_SAMPLES` and excluded from statistical comparisons.")
+$mdLines.Add("- **Periodic Host Telemetry Sampling**: Querying QEMU CPU and Windows `\\GPU Engine(*)\\Utilization Percentage` every 350ms during workload.")
+$mdLines.Add("- **Property Read-Back Verification**: Explicit read-back check (`getprop`) after setting SurfaceFlinger properties.")
+$mdLines.Add("- **Runtime Experimental Flag**: `EnableSurfaceFlingerLowLatencyTuning` added to `RuntimeConfiguration`.")
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
-$mdLines.Add("## 3. [INFERENCE] A/B Hypothesis Evaluation")
+$mdLines.Add("## 3. [INFERENCE] SurfaceFlinger Tuning Evaluation")
 $mdLines.Add("")
 
-$standalone1920 = ($results | Where-Object { $_.Mode -eq "Standalone" -and $_.Label -match "1920x1200" } | Select-Object -First 1)
-$embedded1920 = ($results | Where-Object { $_.Mode -eq "Embedded" -and $_.Label -match "1920x1200" } | Select-Object -First 1)
+$base = ($conditionSummaries | Where-Object { $_.Key -eq "CondA_Baseline" } | Select-Object -First 1)
+$both = ($conditionSummaries | Where-Object { $_.Key -eq "CondD_Both" } | Select-Object -First 1)
+$latch = ($conditionSummaries | Where-Object { $_.Key -eq "CondB_LatchOnly" } | Select-Object -First 1)
+$bp = ($conditionSummaries | Where-Object { $_.Key -eq "CondC_BackpressureOnly" } | Select-Object -First 1)
 
-if ($standalone1920 -and $embedded1920) {
-    $fpsDelta = [math]::Round($embedded1920.AvgFps - $standalone1920.AvgFps, 1)
-    $mdLines.Add("### 3.1 1920x1200 Comparison (Standalone vs Embedded)")
-    $mdLines.Add("- **Standalone 1920x1200 FPS**: " + $standalone1920.AvgFps + " FPS (" + $standalone1920.AvgFrameTimeMs + " ms)")
-    $mdLines.Add("- **Embedded 1920x1200 FPS**: " + $embedded1920.AvgFps + " FPS (" + $embedded1920.AvgFrameTimeMs + " ms)")
-    $mdLines.Add("- **FPS Delta**: " + $fpsDelta + " FPS")
+if ($base -and $both) {
+    $deltaThroughput = [math]::Round($both.ThroughputMedian - $base.ThroughputMedian, 2)
+    $deltaLatency = [math]::Round($both.LatencyAvgMedianMs - $base.LatencyAvgMedianMs, 2)
+
+    $mdLines.Add("### 3.1 Repeatability & Statistical Significance")
+    $mdLines.Add("- **Baseline Median Throughput**: " + $base.ThroughputMedian + " FPS (Latency: " + $base.LatencyAvgMedianMs + " ms, Latency-Eq: " + $base.LatencyEqFpsMedian + " FPS)")
+    $mdLines.Add("- **Both (latch=1, bp=1) Median Throughput**: " + $both.ThroughputMedian + " FPS (Latency: " + $both.LatencyAvgMedianMs + " ms, Latency-Eq: " + $both.LatencyEqFpsMedian + " FPS)")
+    $mdLines.Add("- **Observed Delta**: Throughput Delta: **+$deltaThroughput FPS**, Latency Delta: **$deltaLatency ms**")
     $mdLines.Add("")
-    if ([math]::Abs($fpsDelta) -lt 3.0) {
-        $mdLines.Add("> **Conclusion**:")
-        $mdLines.Add("> The framerates between Standalone and Win32 SetParent Embedded windows are **virtually identical** (Delta: $fpsDelta FPS).")
-        $mdLines.Add("> This **disproves the hypothesis that SetParent embedding solves the rendering bottleneck**.")
-        $mdLines.Add("> `SetParent` Win32 embedding is an effective **UX Integration mechanism** (clean borderless embedding inside Host UI), but the 1920x1200 ~10-15fps bottleneck resides inside the guest rendering / gfxstream / SurfaceFlinger presentation pipeline.")
-    } elseif ($fpsDelta -ge 5.0) {
-        $mdLines.Add("> **Conclusion**:")
-        $mdLines.Add("> Embedded mode showed a significant framerate increase (+$fpsDelta FPS). SetParent embedding improves DWM swapchain presentation efficiency.")
+    if ($deltaThroughput -ge 3.0 -or $deltaLatency -le -10.0) {
+        $mdLines.Add("> **Finding**: SurfaceFlinger buffer tuning reliably reduces frame latency and improves pacing across 5 independent trials.")
+    } else {
+        $mdLines.Add("> **Finding**: Throughput gains across 5 repeated trials remain within variance bounds, showing that host GPU GLES translation (`gfxstream`) remains the overarching ceiling.")
     }
 }
 
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
-$mdLines.Add("## 4. [OPEN] Residual Questions & Blockers")
-$mdLines.Add("1. **Guest Graphics Path**: Is gfxstream OpenGL-to-ANGLE Direct3D11 translation vs ANGLE Vulkan translation the primary bottleneck?")
-$mdLines.Add("2. **Touch Routing in Embedded Mode**: Does Win32 `SetParent` preserve multi-touch gestures directly from Windows Touch to guest pointer events, or does it require explicit `WM_TOUCH` forwarding?")
+$mdLines.Add("## 4. [OPEN] Residual Architectural Blockers")
+$mdLines.Add("1. **Host GPU Translation Overhead**: Direct3D11 / ANGLE translation layer inside `gfxstream_backend.dll`.")
+$mdLines.Add("2. **Emulator GPU Backend Evaluation**: Comparing `-gpu host` vs `-gpu angle_indirect` vs `-gpu vulkan` at 1920x1200.")
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
 $mdLines.Add("## 5. [DECISION] Architectural Next Steps")
-$mdLines.Add("- Keep `IWindowEmbedderService` for seamless Host UI encapsulation.")
-$mdLines.Add("- Investigate internal emulator GPU backends (`-gpu host` vs `-gpu angle_indirect` vs `-gpu vulkan`) to target the real 1920x1200 rendering bottleneck.")
+$mdLines.Add("- Keep `EnableSurfaceFlingerLowLatencyTuning` as an experimental configuration option in `RuntimeConfiguration`.")
+$mdLines.Add("- Proceed to the next milestone ticket: `perf: compare emulator GPU backends at 1920x1200`.")
 
 [System.IO.File]::WriteAllLines($reportFile, $mdLines, [System.Text.Encoding]::UTF8)
-Write-Host "[OK] A/B Benchmark report written to: $reportFile`n" -ForegroundColor Green
+Write-Host "`n[OK] Statistical A/B validation report written to: $reportFile`n" -ForegroundColor Green

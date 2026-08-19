@@ -138,13 +138,32 @@ public class AndroidEmulatorBackend : IRuntimeBackend
             _logger?.Log(LogCategory.Runtime, "Triggering GuestAgent Service start via ADB...");
             await _adbClient.StartGuestAgentServiceAsync(_deviceSerial, ct);
 
-            // 5. SurfaceFlinger 저지연/버퍼링 최적화 프로퍼티 주입
-            try
+            // 5. Experimental: SurfaceFlinger 저지연/버퍼링 최적화 프로퍼티 주입 및 검증
+            if (config.EnableSurfaceFlingerLowLatencyTuning)
             {
-                await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "setprop debug.sf.latch_unsignaled 1", ct);
-                await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "setprop debug.sf.disable_backpressure 1", ct);
+                try
+                {
+                    _logger?.Log(LogCategory.Runtime, "Applying experimental SurfaceFlinger low-latency tuning...");
+                    await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "setprop debug.sf.latch_unsignaled 1", ct);
+                    await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "setprop debug.sf.disable_backpressure 1", ct);
+
+                    var latchVal = (await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "getprop debug.sf.latch_unsignaled", ct)).Trim();
+                    var bpVal = (await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "getprop debug.sf.disable_backpressure", ct)).Trim();
+
+                    if (latchVal == "1" && bpVal == "1")
+                    {
+                        _logger?.Log(LogCategory.Runtime, "SurfaceFlinger tuning verified and active (latch_unsignaled=1, disable_backpressure=1).");
+                    }
+                    else
+                    {
+                        _logger?.Log(LogCategory.Runtime, $"SurfaceFlinger tuning read-back mismatch: latch='{latchVal}', backpressure='{bpVal}'", "WARN");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Log(LogCategory.Runtime, $"Failed to configure SurfaceFlinger tuning: {ex.Message}", "WARN");
+                }
             }
-            catch {}
 
             // 6. Emulator Console 연결
             await _consoleClient.ConnectAsync("127.0.0.1", config.ConsolePort, ct: ct);
