@@ -6,6 +6,7 @@ using TabletDroid.Bridge.Clipboard;
 using TabletDroid.Bridge.Emulator;
 using TabletDroid.Bridge.Guest;
 using TabletDroid.Bridge.Rotation;
+using TabletDroid.Bridge.Window;
 using TabletDroid.Core.Models;
 using TabletDroid.Core.Services;
 using TabletDroid.Runtime;
@@ -22,6 +23,7 @@ public partial class MainWindow : Window
     private readonly IClipboardBridge _clipboardBridge;
     private readonly IRotationBridge _rotationBridge;
     private readonly IWindowsOrientationWatcher _orientationWatcher;
+    private readonly IWindowEmbedderService _windowEmbedder;
     private readonly AndroidEmulatorBackend _runtimeBackend;
 
     private DispatcherTimer? _clipboardPollingTimer;
@@ -39,6 +41,7 @@ public partial class MainWindow : Window
         _clipboardBridge = new ClipboardBridge(_guestClient);
         _rotationBridge = new RotationBridge(_adbClient, _consoleClient, _guestClient, _logService);
         _orientationWatcher = new DebouncedOrientationWatcher(debounceMilliseconds: 300);
+        _windowEmbedder = new TabletDroid.Bridge.Window.Win32WindowEmbedderService(_logService);
 
         _runtimeBackend = new AndroidEmulatorBackend(_adbClient, _consoleClient, _guestClient, _logService);
         _runtimeBackend.StateChanged += OnRuntimeStateChanged;
@@ -49,6 +52,7 @@ public partial class MainWindow : Window
 
         Loaded += OnMainWindowLoaded;
         Closing += OnMainWindowClosing;
+        SizeChanged += (s, e) => UpdateEmbeddedViewport();
     }
 
     private async void OnMainWindowLoaded(object sender, RoutedEventArgs e)
@@ -74,8 +78,66 @@ public partial class MainWindow : Window
         _clipboardPollingTimer?.Stop();
         _orientationWatcher.Stop();
         _clipboardBridge.Stop();
+        _windowEmbedder.DetachWindow();
 
         await _runtimeBackend.StopAsync();
+    }
+
+    private async void OnToggleEmbedClicked(object sender, RoutedEventArgs e)
+    {
+        if (_windowEmbedder.IsEmbedded)
+        {
+            _windowEmbedder.DetachWindow();
+            EmulatorViewport.Visibility = Visibility.Collapsed;
+            AppGridScrollViewer.Visibility = Visibility.Visible;
+            BtnToggleEmbed.Content = "Embed Window";
+            LogText.Text = "Detached emulator window to standalone.";
+        }
+        else
+        {
+            var hostHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+            if (hostHwnd == IntPtr.Zero) return;
+
+            LogText.Text = "Embedding Android Emulator window into Host...";
+            var success = await _windowEmbedder.EmbedWindowAsync(hostHwnd);
+            if (success)
+            {
+                AppGridScrollViewer.Visibility = Visibility.Collapsed;
+                EmulatorViewport.Visibility = Visibility.Visible;
+                BtnToggleEmbed.Content = "Detach Window";
+                UpdateEmbeddedViewport();
+                LogText.Text = "Android Emulator embedded into TabletDroid Host (Zero-Copy).";
+            }
+            else
+            {
+                LogText.Text = "Failed to find/embed emulator window. Ensure runtime is running.";
+            }
+        }
+    }
+
+    private void OnEmulatorViewportSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateEmbeddedViewport();
+    }
+
+    private void UpdateEmbeddedViewport()
+    {
+        if (!_windowEmbedder.IsEmbedded) return;
+
+        var source = PresentationSource.FromVisual(this);
+        double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+        double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+
+        var point = EmulatorViewport.TransformToAncestor(this).Transform(new Point(0, 0));
+        int x = (int)(point.X * dpiX);
+        int y = (int)(point.Y * dpiY);
+        int w = (int)(EmulatorViewport.ActualWidth * dpiX);
+        int h = (int)(EmulatorViewport.ActualHeight * dpiY);
+
+        if (w > 0 && h > 0)
+        {
+            _windowEmbedder.UpdateViewport(x, y, w, h);
+        }
     }
 
     private void OnCheckWindowsClipboard(object? sender, EventArgs e)

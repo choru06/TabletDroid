@@ -96,52 +96,64 @@
                     </StackPanel>
                 </Border>
 
+                <Button x:Name="BtnToggleEmbed" Content="Embed Window" Background="#334155" Style="{StaticResource PrimaryActionBtn}" Click="OnToggleEmbedClicked" Margin="0,0,8,0"/>
                 <Button x:Name="BtnStartRuntime" Content="Start Runtime" Style="{StaticResource PrimaryActionBtn}" Click="OnStartRuntimeClicked" Margin="0,0,8,0"/>
                 <Button x:Name="BtnStopRuntime" Content="Stop" Background="#334155" Style="{StaticResource PrimaryActionBtn}" Click="OnStopRuntimeClicked"/>
             </StackPanel>
         </Grid>
 
-        <!-- 중앙 메인 앱 그리드 -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
-                <TextBlock Text="Pinned Applications" FontSize="18" FontWeight="SemiBold" Foreground="#E2E8F0" Margin="12,0,0,16"/>
+        <!-- 중앙 영역: 앱 선택 화면 또는 임베디드 에뮬레이터 뷰포트 -->
+        <Grid Grid.Row="1">
+            <ScrollViewer x:Name="AppGridScrollViewer" VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <TextBlock Text="Pinned Applications" FontSize="18" FontWeight="SemiBold" Foreground="#E2E8F0" Margin="12,0,0,16"/>
 
-                <WrapPanel Orientation="Horizontal">
-                    <!-- Instagram Card -->
-                    <Button Width="220" Height="200" Style="{StaticResource AppCardStyle}" Click="OnLaunchInstagramClicked">
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Border Width="64" Height="64" CornerRadius="16" Background="#E1306C" Margin="0,0,0,16">
-                                <TextBlock Text="📷" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="Instagram" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                            <TextBlock Text="Portrait / Fullscreen" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                        </StackPanel>
-                    </Button>
+                    <WrapPanel Orientation="Horizontal">
+                        <!-- Instagram Card -->
+                        <Button Width="220" Height="200" Style="{StaticResource AppCardStyle}" Click="OnLaunchInstagramClicked">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Border Width="64" Height="64" CornerRadius="16" Background="#E1306C" Margin="0,0,0,16">
+                                    <TextBlock Text="📷" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="Instagram" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Portrait / Fullscreen" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Button>
 
-                    <!-- YouTube Card -->
-                    <Button Width="220" Height="200" Style="{StaticResource AppCardStyle}" Click="OnLaunchYouTubeClicked">
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Border Width="64" Height="64" CornerRadius="16" Background="#FF0000" Margin="0,0,0,16">
-                                <TextBlock Text="▶" FontSize="32" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="YouTube" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                            <TextBlock Text="Landscape Tablet" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                        </StackPanel>
-                    </Button>
+                        <!-- YouTube Card -->
+                        <Button Width="220" Height="200" Style="{StaticResource AppCardStyle}" Click="OnLaunchYouTubeClicked">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Border Width="64" Height="64" CornerRadius="16" Background="#FF0000" Margin="0,0,0,16">
+                                    <TextBlock Text="▶" FontSize="32" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="YouTube" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Landscape Tablet" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Button>
 
-                    <!-- Discord Card -->
-                    <Button Width="220" Height="200" Style="{StaticResource AppCardStyle}" Click="OnLaunchDiscordClicked">
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <Border Width="64" Height="64" CornerRadius="16" Background="#5865F2" Margin="0,0,0,16">
-                                <TextBlock Text="💬" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <TextBlock Text="Discord" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                            <TextBlock Text="Adaptive UI" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                        </StackPanel>
-                    </Button>
-                </WrapPanel>
-            </StackPanel>
-        </ScrollViewer>
+                        <!-- Discord Card -->
+                        <Button Width="220" Height="200" Style="{StaticResource AppCardStyle}" Click="OnLaunchDiscordClicked">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Border Width="64" Height="64" CornerRadius="16" Background="#5865F2" Margin="0,0,0,16">
+                                    <TextBlock Text="💬" FontSize="32" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <TextBlock Text="Discord" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Adaptive UI" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Button>
+                    </WrapPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Embedded Emulator Viewport Container -->
+            <Border x:Name="EmulatorViewport"
+                    Background="#000000"
+                    CornerRadius="12"
+                    BorderBrush="#334155"
+                    BorderThickness="1"
+                    Visibility="Collapsed"
+                    SizeChanged="OnEmulatorViewportSizeChanged"/>
+        </Grid>
 
         <!-- 하단 정보 및 로그 -->
         <Border Grid.Row="2" Background="#18181B" CornerRadius="12" Padding="16,12" Margin="0,16,0,0">
