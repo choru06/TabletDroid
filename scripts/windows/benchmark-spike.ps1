@@ -3,8 +3,8 @@ param(
     [string]$PackageName = "com.instagram.android",
     [string]$ActivityName = "com.instagram.android/.activity.MainTabActivity",
     [int]$ScrollDurationSeconds = 10,
-    [ValidateSet("SurfaceFlinger4Way", "Standalone", "Embedded", "All", "Single")]
-    [string]$Mode = "SurfaceFlinger4Way",
+    [ValidateSet("SurfaceFlinger4Way", "GpuRendererComparison", "Standalone", "Embedded", "All", "Single")]
+    [string]$Mode = "GpuRendererComparison",
     [int]$Trials = 5,
     [string]$OutputDir = "$PSScriptRoot\..\..\docs\performance"
 )
@@ -454,11 +454,99 @@ if ($Mode -eq "SurfaceFlinger4Way") {
             })
         }
     }
+} elseif ($Mode -eq "GpuRendererComparison") {
+    $matrix = @(
+        @{ Key = "CondA_SkiaGL";  Name = "A. Skia OpenGL (skiagl)";  Renderer = "skiagl" },
+        @{ Key = "CondB_SkiaVK";  Name = "B. Skia Vulkan (skiavk)";  Renderer = "skiavk" }
+    )
+
+    # Ensure native 1920x1200
+    & $adb -s $DeviceSerial shell wm size reset > $null
+    & $adb -s $DeviceSerial shell wm size 1920x1200 > $null
+    Start-Sleep -Seconds 1
+
+    foreach ($cond in $matrix) {
+        $key = $cond.Key
+        $name = $cond.Name
+        $renderer = $cond.Renderer
+
+        Write-Host "`n================================================================================" -ForegroundColor Yellow
+        Write-Host " Setting GPU HWUI Renderer: $name ($renderer)" -ForegroundColor Yellow
+        Write-Host "================================================================================" -ForegroundColor Yellow
+
+        & $adb -s $DeviceSerial shell setprop debug.hwui.renderer $renderer > $null 2>&1
+        Start-Sleep -Milliseconds 300
+        $readRenderer = (& $adb -s $DeviceSerial shell getprop debug.hwui.renderer 2>$null).Trim()
+        
+        if ($readRenderer -ne $renderer) {
+            Write-Host "  [WARN] Read-back mismatch! Read: '$readRenderer', Expected: '$renderer'" -ForegroundColor DarkYellow
+        } else {
+            Write-Host "  [OK] Read-back verified: debug.hwui.renderer=$readRenderer" -ForegroundColor Green
+        }
+
+        # Force stop and relaunch app to ensure HWUI initialization with selected renderer
+        & $adb -s $DeviceSerial shell am force-stop $PackageName > $null 2>&1
+        Start-Sleep -Milliseconds 500
+        & $adb -s $DeviceSerial shell am start -n $ActivityName > $null 2>&1
+        Start-Sleep -Seconds 2
+
+        $condTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+        for ($t = 1; $t -le $Trials; $t++) {
+            $trialData = Measure-HardenedTrial -pkg $PackageName -durationSec $ScrollDurationSeconds -testLabel $name -conditionKey $key -trialNum $t
+            $allTrialResults.Add($trialData)
+            if ($trialData.IsValid) {
+                $condTrials.Add($trialData)
+            }
+            Start-Sleep -Milliseconds 500
+        }
+
+        $validCount = $condTrials.Count
+        if ($validCount -ge 1) {
+            $sortedThroughput = $condTrials | Select-Object -ExpandProperty ThroughputFps | Sort-Object
+            $sortedLatency = $condTrials | Select-Object -ExpandProperty FrameLatencyAvgMs | Sort-Object
+            $sortedLatencyEq = $condTrials | Select-Object -ExpandProperty LatencyEqFps | Sort-Object
+            $sortedP50 = $condTrials | Select-Object -ExpandProperty P50Ms | Sort-Object
+            $sortedP90 = $condTrials | Select-Object -ExpandProperty P90Ms | Sort-Object
+            $sortedP99 = $condTrials | Select-Object -ExpandProperty P99Ms | Sort-Object
+            $sortedJank = $condTrials | Select-Object -ExpandProperty JankPercent | Sort-Object
+            $sortedCpu = $condTrials | Select-Object -ExpandProperty CpuAvgPercent | Sort-Object
+            $sortedCpuPeak = $condTrials | Select-Object -ExpandProperty CpuPeakPercent | Sort-Object
+            $sortedGpu3D = $condTrials | Select-Object -ExpandProperty Gpu3DAvgPercent | Sort-Object
+            $sortedGpuCopy = $condTrials | Select-Object -ExpandProperty GpuCopyAvgPercent | Sort-Object
+
+            $medianIdx = [int]($validCount / 2)
+            $avgThroughput = ($sortedThroughput | Measure-Object -Average).Average
+            $sumSquares = 0.0
+            foreach ($v in $sortedThroughput) { $sumSquares += [math]::Pow($v - $avgThroughput, 2) }
+            $stdDev = [math]::Round([math]::Sqrt($sumSquares / $validCount), 2)
+
+            $conditionSummaries.Add([PSCustomObject]@{
+                Condition = $name
+                Key = $key
+                ValidTrials = "$validCount / $Trials"
+                ThroughputMedian = $sortedThroughput[$medianIdx]
+                ThroughputMin = ($sortedThroughput | Measure-Object -Minimum).Minimum
+                ThroughputMax = ($sortedThroughput | Measure-Object -Maximum).Maximum
+                ThroughputStdDev = $stdDev
+                LatencyAvgMedianMs = $sortedLatency[$medianIdx]
+                LatencyEqFpsMedian = $sortedLatencyEq[$medianIdx]
+                P50MedianMs = $sortedP50[$medianIdx]
+                P90MedianMs = $sortedP90[$medianIdx]
+                P99MedianMs = $sortedP99[$medianIdx]
+                JankMedianPercent = $sortedJank[$medianIdx]
+                CpuAvgPercent = $sortedCpu[$medianIdx]
+                CpuPeakPercent = $sortedCpuPeak[$medianIdx]
+                Gpu3DAvgPercent = $sortedGpu3D[$medianIdx]
+                GpuCopyAvgPercent = $sortedGpuCopy[$medianIdx]
+            })
+        }
+    }
 }
 
 # Summary Table to Console
 Write-Host "`n========================================================================================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid SurfaceFlinger 4-Way A/B Benchmark Statistical Summary (1920x1200)" -ForegroundColor Cyan
+Write-Host " TabletDroid Benchmark Statistical Summary (1920x1200 | Mode: $Mode)" -ForegroundColor Cyan
 Write-Host "========================================================================================================================" -ForegroundColor Cyan
 $conditionSummaries | Format-Table -Property Condition, ValidTrials, ThroughputMedian, ThroughputMin, ThroughputMax, ThroughputStdDev, LatencyAvgMedianMs, LatencyEqFpsMedian, P50MedianMs, JankMedianPercent, CpuAvgPercent, Gpu3DAvgPercent -AutoSize | Out-String | Write-Host -ForegroundColor Green
 
@@ -468,17 +556,19 @@ if (-not (Test-Path $OutputDir)) {
 }
 
 $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-$reportFile = "$OutputDir\surfaceflinger_ab_validation.md"
+$reportFileName = if ($Mode -eq "GpuRendererComparison") { "gpu_backend_comparison.md" } else { "surfaceflinger_ab_validation.md" }
+$reportFile = "$OutputDir\$reportFileName"
 
 $mdLines = [System.Collections.Generic.List[string]]::new()
-$mdLines.Add("# TabletDroid v0.1 SurfaceFlinger 4-Way A/B Statistical Validation Report")
+$reportTitle = if ($Mode -eq "GpuRendererComparison") { "# TabletDroid v0.1 GPU HWUI Renderer Comparison Report (OpenGL vs Vulkan)" } else { "# TabletDroid v0.1 SurfaceFlinger 4-Way A/B Statistical Validation Report" }
+$mdLines.Add($reportTitle)
 $mdLines.Add("")
 $mdLines.Add("- **Timestamp**: $timestamp")
 $mdLines.Add("- **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)")
 $mdLines.Add("- **WHPX Acceleration**: Active & Operational")
 $mdLines.Add("- **Target Application**: $PackageName")
 $mdLines.Add("- **Resolution Tested**: 1920x1200 (Native Tablet Resolution)")
-$mdLines.Add("- **Benchmark Protocol**: 4 Conditions x $Trials Trials x ${ScrollDurationSeconds}s active scrolling per trial")
+$mdLines.Add("- **Benchmark Protocol**: $Mode (Conditions: $($conditionSummaries.Count), $Trials Trials x ${ScrollDurationSeconds}s/trial)")
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
