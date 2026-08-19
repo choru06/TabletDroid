@@ -5,7 +5,7 @@ namespace TabletDroid.Core.Services;
 
 public class AppSettings
 {
-    public string DefaultAvdName { get; set; } = "TabletDroid_Z13";
+    public string DefaultAvdName { get; set; } = "TabletDroid_Z13_Play";
     public bool AutoRotateWithWindowsSensor { get; set; } = true;
     public bool BiDirectionalClipboardSync { get; set; } = true;
     public List<AndroidApp> InstalledApps { get; set; } = AndroidApp.GetDefaultPresetApps();

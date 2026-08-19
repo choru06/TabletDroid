@@ -14,6 +14,7 @@ namespace TabletDroid.Host;
 
 public partial class MainWindow : Window
 {
+    private readonly IDiagnosticLogService _logService;
     private readonly ISettingsService _settingsService;
     private readonly IAdbClient _adbClient;
     private readonly IEmulatorConsoleClient _consoleClient;
@@ -30,21 +31,20 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        _logService = new DiagnosticLogService();
         _settingsService = new SettingsService();
-        _adbClient = new AdbClient();
+        _adbClient = new AdbClient(logger: _logService);
         _consoleClient = new EmulatorConsoleClient();
         _guestClient = new GuestAgentClient();
         _clipboardBridge = new ClipboardBridge(_guestClient);
-        _rotationBridge = new RotationBridge(_adbClient, _consoleClient, _guestClient);
+        _rotationBridge = new RotationBridge(_adbClient, _consoleClient, _guestClient, _logService);
         _orientationWatcher = new DebouncedOrientationWatcher(debounceMilliseconds: 300);
 
-        _runtimeBackend = new AndroidEmulatorBackend(_adbClient, _consoleClient, _guestClient);
+        _runtimeBackend = new AndroidEmulatorBackend(_adbClient, _consoleClient, _guestClient, _logService);
         _runtimeBackend.StateChanged += OnRuntimeStateChanged;
+        _runtimeBackend.DiagnosticReported += OnDiagnosticReported;
 
-        // Android ➔ Windows 클립보드 수신 이벤트 연결
         _clipboardBridge.AndroidClipboardReceived += OnAndroidClipboardReceived;
-
-        // Windows 센서 방향 변경 ➔ Android 회전 브릿지 연결
         _orientationWatcher.OrientationChanged += OnWindowsOrientationChanged;
 
         Loaded += OnMainWindowLoaded;
@@ -54,12 +54,12 @@ public partial class MainWindow : Window
     private async void OnMainWindowLoaded(object sender, RoutedEventArgs e)
     {
         await _settingsService.LoadAsync();
+        _logService.Log(LogCategory.Host, "TabletDroid MainWindow loaded.");
         UpdateStatusUi(RuntimeState.Stopped);
 
         _clipboardBridge.Start();
         _orientationWatcher.Start();
 
-        // Windows 클립보드 변경 폴링 타이머 (500ms 주기)
         _clipboardPollingTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(500)
@@ -70,6 +70,7 @@ public partial class MainWindow : Window
 
     private async void OnMainWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        _logService.Log(LogCategory.Host, "TabletDroid MainWindow closing.");
         _clipboardPollingTimer?.Stop();
         _orientationWatcher.Stop();
         _clipboardBridge.Stop();
@@ -93,7 +94,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            // Clipboard lock 충돌 방지
+            // Clipboard lock conflict ignore
         }
     }
 
@@ -135,6 +136,14 @@ public partial class MainWindow : Window
         Dispatcher.Invoke(() => UpdateStatusUi(state));
     }
 
+    private void OnDiagnosticReported(object? sender, RuntimeDiagnosticInfo diag)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            LogText.Text = $"[Error] {diag.FailureReason}: {diag.DiagnosticMessage} (Logs at: {_logService.LogDirectory})";
+        });
+    }
+
     private void UpdateStatusUi(RuntimeState state)
     {
         StatusText.Text = state.ToString().ToUpperInvariant();
@@ -169,7 +178,7 @@ public partial class MainWindow : Window
         {
             LogText.Text = $"Android Runtime is READY on {_runtimeBackend.DeviceSerial}. Fullscreen mode active.";
         }
-        else
+        else if (_runtimeBackend.State != RuntimeState.Faulted)
         {
             LogText.Text = "Failed to start Android Runtime. Check WHPX / AVD configuration.";
         }
@@ -201,7 +210,7 @@ public partial class MainWindow : Window
     {
         if (_runtimeBackend.State != RuntimeState.Ready)
         {
-            LogText.Text = $"Starting runtime to launch {appName}...";
+            LogText.Text = $"Starting runtime for {appName}...";
             var started = await _runtimeBackend.StartAsync(new RuntimeConfiguration
             {
                 AvdName = _settingsService.Settings.DefaultAvdName
@@ -209,14 +218,21 @@ public partial class MainWindow : Window
 
             if (!started)
             {
-                LogText.Text = $"Could not start runtime for {appName}.";
+                LogText.Text = $"Could not start runtime for {appName}. Check logs.";
                 return;
             }
         }
 
-        LogText.Text = $"Setting display orientation and launching {appName}...";
+        // 설치 여부 사전 확인
+        var isInstalled = await _adbClient.IsAppInstalledAsync(_runtimeBackend.DeviceSerial, packageName);
+        if (!isInstalled)
+        {
+            LogText.Text = $"{appName} ({packageName}) is NOT installed on {_runtimeBackend.DeviceSerial}. Please install it from Play Store or APK.";
+            return;
+        }
 
-        // 화면 방향 정책 적용
+        LogText.Text = $"Applying {profile.Orientation} orientation and launching {appName}...";
+
         var targetOrientation = profile.Orientation == OrientationPolicy.PortraitPreferred
             ? Protocol.DeviceOrientation.OrientationRight90
             : Protocol.DeviceOrientation.OrientationNatural;
@@ -226,7 +242,6 @@ public partial class MainWindow : Window
             profile.Orientation,
             deviceSerial: _runtimeBackend.DeviceSerial);
 
-        // 앱 실행 (GuestAgent RPC 우선 시도 후 ADB Fallback)
         bool launched = false;
         if (_guestClient.IsReady)
         {
@@ -244,7 +259,7 @@ public partial class MainWindow : Window
         }
         else
         {
-            LogText.Text = $"Failed to launch {appName}. Is the APK installed?";
+            LogText.Text = $"Failed to launch {appName}.";
         }
     }
 }

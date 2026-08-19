@@ -2,6 +2,7 @@ using TabletDroid.Bridge.Adb;
 using TabletDroid.Bridge.Emulator;
 using TabletDroid.Bridge.Guest;
 using TabletDroid.Core.Models;
+using TabletDroid.Core.Services;
 using TabletDroid.Protocol;
 
 namespace TabletDroid.Bridge.Rotation;
@@ -17,6 +18,7 @@ public class RotationBridge : IRotationBridge
     private readonly IAdbClient? _adbClient;
     private readonly IEmulatorConsoleClient? _consoleClient;
     private readonly IGuestAgentClient? _guestClient;
+    private readonly IDiagnosticLogService? _logger;
     private DeviceOrientation _currentOrientation = DeviceOrientation.OrientationNatural;
 
     public DeviceOrientation CurrentOrientation => _currentOrientation;
@@ -24,11 +26,13 @@ public class RotationBridge : IRotationBridge
     public RotationBridge(
         IAdbClient? adbClient,
         IEmulatorConsoleClient? consoleClient,
-        IGuestAgentClient? guestClient)
+        IGuestAgentClient? guestClient,
+        IDiagnosticLogService? logger = null)
     {
         _adbClient = adbClient;
         _consoleClient = consoleClient;
         _guestClient = guestClient;
+        _logger = logger;
     }
 
     public async Task SetOrientationAsync(
@@ -36,6 +40,8 @@ public class RotationBridge : IRotationBridge
         OrientationPolicy policy = OrientationPolicy.Auto,
         string deviceSerial = "emulator-5554")
     {
+        _logger?.Log(LogCategory.Runtime, $"Setting orientation: target={orientation}, policy={policy} on {deviceSerial}");
+
         // 정책 확인 (세로 모드 선호 앱 또는 가로 모드 선호 앱)
         if (policy == OrientationPolicy.PortraitPreferred &&
             (orientation == DeviceOrientation.OrientationNatural || orientation == DeviceOrientation.OrientationInverted180))
@@ -57,28 +63,36 @@ public class RotationBridge : IRotationBridge
             return;
         }
 
-        // 2. v0.1 Dev/Stock AVD: ADB shell settings를 통해 정확한 절대 각도 설정 (0, 1, 2, 3)
+        // 2. v0.1 Dev/Stock AVD: ADB shell settings를 통한 정확한 정책 제어
         if (_adbClient != null)
         {
-            var rotationVal = orientation switch
-            {
-                DeviceOrientation.OrientationNatural => 0,
-                DeviceOrientation.OrientationRight90 => 1,
-                DeviceOrientation.OrientationInverted180 => 2,
-                DeviceOrientation.OrientationLeft270 => 3,
-                _ => 0
-            };
-
             try
             {
-                // 가속도 센서 자동회전 비활성화 후 사용자 고정 회전값 주입
-                await _adbClient.ExecuteShellCommandAsync(deviceSerial, "settings put system accelerometer_rotation 0");
-                await _adbClient.ExecuteShellCommandAsync(deviceSerial, $"settings put system user_rotation {rotationVal}");
+                if (policy == OrientationPolicy.Auto)
+                {
+                    // Auto 모드: 센서 자동 회전 활성화
+                    await _adbClient.ExecuteShellCommandAsync(deviceSerial, "settings put system accelerometer_rotation 1");
+                }
+                else
+                {
+                    // 고정 각도 모드: 자동 회전 비활성화 후 user_rotation 주입
+                    var rotationVal = orientation switch
+                    {
+                        DeviceOrientation.OrientationNatural => 0,      // 0도 (가로)
+                        DeviceOrientation.OrientationRight90 => 1,     // 90도 (세로)
+                        DeviceOrientation.OrientationInverted180 => 2, // 180도 (역가로)
+                        DeviceOrientation.OrientationLeft270 => 3,     // 270도 (역세로)
+                        _ => 0
+                    };
+
+                    await _adbClient.ExecuteShellCommandAsync(deviceSerial, "settings put system accelerometer_rotation 0");
+                    await _adbClient.ExecuteShellCommandAsync(deviceSerial, $"settings put system user_rotation {rotationVal}");
+                }
                 return;
             }
-            catch
+            catch (Exception ex)
             {
-                // ADB 실패 시 콘솔 폴백
+                _logger?.LogError(LogCategory.Runtime, "Failed to apply rotation via ADB, trying console fallback", ex);
             }
         }
 

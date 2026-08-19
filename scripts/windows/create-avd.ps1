@@ -1,12 +1,24 @@
 param(
-    [string]$AvdName = "TabletDroid_Z13",
+    [string]$AvdName = "TabletDroid_Z13_Play",
+    [ValidateSet("Play", "Dev")]
+    [string]$Profile = "Play",
     [int]$Width = 1920,
     [int]$Height = 1200,
     [int]$Dpi = 280,
     [int]$RamMb = 4096
 )
 
-Write-Host "Creating TabletDroid AVD profile: $AvdName ($Width x $Height, ${Dpi}dpi, ${RamMb}MB RAM)..." -ForegroundColor Cyan
+$imagePackage = if ($Profile -eq "Play") {
+    "system-images;android-34;google_apis_playstore;x86_64"
+} else {
+    "system-images;android-34;google_apis;x86_64"
+}
+
+Write-Host "==========================================================" -ForegroundColor Cyan
+Write-Host " Creating TabletDroid AVD: $AvdName ($Profile Profile)" -ForegroundColor Cyan
+Write-Host " Package: $imagePackage" -ForegroundColor Yellow
+Write-Host " Resolution: ${Width}x${Height} @ ${Dpi}dpi, Memory: ${RamMb}MB" -ForegroundColor Yellow
+Write-Host "==========================================================" -ForegroundColor Cyan
 
 $avdManager = (Get-Command avdmanager -ErrorAction SilentlyContinue).Source
 if (-not $avdManager) {
@@ -19,7 +31,8 @@ if (-not (Test-Path $avdManager)) {
 }
 
 # 기본 태블릿 AVD 생성 명령
-& $avdManager create avd -n $AvdName -k "system-images;android-34;google_apis;x86_64" --device "tablet" --force
+Write-Host "Running avdmanager create avd..." -ForegroundColor Gray
+& $avdManager create avd -n $AvdName -k $imagePackage --device "tablet" --force
 
 # config.ini 속성 미세조정 (해상도 및 WHPX 최적화)
 $avdPath = "$env:USERPROFILE\.android\avd\$AvdName.avd\config.ini"
@@ -35,5 +48,7 @@ if (Test-Path $avdPath) {
     $config += "hw.accelerometer = yes"
     $config += "hw.sensors.orientation = yes"
     $config | Set-Content $avdPath
-    Write-Host "[OK] AVD '$AvdName' customized successfully." -ForegroundColor Green
+    Write-Host "[OK] AVD '$AvdName' ($Profile) created and customized successfully." -ForegroundColor Green
+} else {
+    Write-Warning "config.ini not found at '$avdPath'."
 }

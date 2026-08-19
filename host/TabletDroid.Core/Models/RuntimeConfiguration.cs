@@ -5,7 +5,7 @@ namespace TabletDroid.Core.Models;
 /// </summary>
 public class RuntimeConfiguration
 {
-    public string AvdName { get; set; } = "TabletDroid_Z13";
+    public string AvdName { get; set; } = "TabletDroid_Z13_Play";
     public string SdkPath { get; set; } = string.Empty;
     public string EmulatorBinaryPath { get; set; } = string.Empty;
     public string AdbBinaryPath { get; set; } = string.Empty;
