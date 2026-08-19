@@ -7,6 +7,24 @@ param(
 
 $ErrorActionPreference = "Continue"
 
+$androidHome = "$env:LOCALAPPDATA\Android\Sdk"
+$jdkHome = "$env:LOCALAPPDATA\Android\Jdk"
+$dotnetDir = "$env:LOCALAPPDATA\Microsoft\dotnet"
+
+if (Test-Path $jdkHome) {
+    $env:JAVA_HOME = $jdkHome
+    $env:PATH = "$jdkHome\bin;$env:PATH"
+}
+if (Test-Path $androidHome) {
+    $env:ANDROID_HOME = $androidHome
+    $env:ANDROID_SDK_ROOT = $androidHome
+    $env:PATH = "$androidHome\platform-tools;$androidHome\emulator;$androidHome\cmdline-tools\latest\bin;$env:PATH"
+}
+if (Test-Path $dotnetDir) {
+    $env:DOTNET_ROOT = $dotnetDir
+    $env:PATH = "$dotnetDir;$env:PATH"
+}
+
 Write-Host "`n========================================================" -ForegroundColor Cyan
 Write-Host " TabletDroid v0.0 Physical E2E Validation Spike Runner" -ForegroundColor Cyan
 Write-Host " Target Device: ASUS ROG Flow Z13 / Windows 11" -ForegroundColor Cyan
@@ -15,14 +33,20 @@ Write-Host "========================================================`n" -Foregro
 $results = [ordered]@{}
 $deviceSerial = "emulator-$ConsolePort"
 
+$emulator = (Get-Command emulator.exe -ErrorAction SilentlyContinue).Source
+if (-not $emulator) { $emulator = "$androidHome\emulator\emulator.exe" }
+
+$adb = (Get-Command adb.exe -ErrorAction SilentlyContinue).Source
+if (-not $adb) { $adb = "$androidHome\platform-tools\adb.exe" }
+
 # 1. WHPX 확인
 Write-Host "[1/8] Checking Windows Hypervisor Platform (WHPX)..." -ForegroundColor Yellow
-$whpx = Get-WindowsOptionalFeature -Online -FeatureName HypervisorPlatform -ErrorAction SilentlyContinue
-if ($whpx -and $whpx.State -eq "Enabled") {
-    Write-Host "  [PASS] WHPX is ENABLED." -ForegroundColor Green
+$accelCheck = & $emulator -accel-check 2>$null
+if ($accelCheck -match "WHPX" -or $accelCheck -match "accel:\s*0") {
+    Write-Host "  [PASS] WHPX is active and usable." -ForegroundColor Green
     $results["WHPX"] = "PASS"
 } else {
-    Write-Host "  [WARN] WHPX feature state: $($whpx.State)" -ForegroundColor DarkYellow
+    Write-Host "  [WARN] Hypervisor status: $accelCheck" -ForegroundColor DarkYellow
     $results["WHPX"] = "WARN"
 }
 
@@ -34,7 +58,7 @@ if (Test-Path $avdPath) {
     $results["AVD ($AvdName)"] = "PASS"
 } else {
     Write-Host "  [INFO] AVD '$AvdName' not found. Creating now..." -ForegroundColor Yellow
-    & "$PSScriptRoot\create-avd.ps1" -AvdName $AvdName -Profile "Play"
+    & powershell.exe -ExecutionPolicy Bypass -File "$PSScriptRoot\create-avd.ps1" -AvdName $AvdName -Profile "Play"
     if (Test-Path $avdPath) {
         Write-Host "  [PASS] AVD created successfully." -ForegroundColor Green
         $results["AVD ($AvdName)"] = "PASS"
@@ -46,12 +70,6 @@ if (Test-Path $avdPath) {
 
 # 3. Emulator 및 ADB 도구 확인
 Write-Host "`n[3/8] Checking ADB & Emulator binaries..." -ForegroundColor Yellow
-$emulator = (Get-Command emulator -ErrorAction SilentlyContinue).Source
-if (-not $emulator) { $emulator = "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe" }
-
-$adb = (Get-Command adb -ErrorAction SilentlyContinue).Source
-if (-not $adb) { $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" }
-
 if ((Test-Path $emulator) -and (Test-Path $adb)) {
     Write-Host "  [PASS] Emulator and ADB found." -ForegroundColor Green
     $results["Tooling"] = "PASS"
@@ -66,13 +84,13 @@ $devices = & $adb devices
 $isRunning = $devices -match $deviceSerial
 
 if (-not $isRunning) {
-    Write-Host "  Starting Emulator '$AvdName' on port $ConsolePort..." -ForegroundColor Gray
-    Start-Process -FilePath $emulator -ArgumentList "-avd", $AvdName, "-port", $ConsolePort, "-accel", "on", "-gpu", "host", "-no-skin", "-no-snapshot-save", "-no-boot-anim"
+    Write-Host "  Starting Emulator '$AvdName' on port $ConsolePort with High Performance Settings..." -ForegroundColor Gray
+    Start-Process -FilePath $emulator -ArgumentList "-avd", $AvdName, "-port", $ConsolePort, "-accel", "on", "-gpu", "host", "-dns-server", "8.8.8.8,1.1.1.1", "-no-skin", "-no-snapshot-save", "-no-boot-anim"
 }
 
-Write-Host "  Waiting for sys.boot_completed=1 (max 90s)..." -ForegroundColor Gray
+Write-Host "  Waiting for sys.boot_completed=1 (max 120s)..." -ForegroundColor Gray
 $booted = $false
-$timeout = [DateTime]::UtcNow.AddSeconds(90)
+$timeout = [DateTime]::UtcNow.AddSeconds(120)
 
 while ([DateTime]::UtcNow -lt $timeout) {
     $bootProp = & $adb -s $deviceSerial shell getprop sys.boot_completed 2>$null
@@ -130,5 +148,7 @@ Write-Host "========================================================`n" -Foregro
 if ($LaunchHost) {
     Write-Host "Launching TabletDroid Host Application (.NET 9)..." -ForegroundColor Cyan
     $hostProj = "$PSScriptRoot\..\..\host\TabletDroid.Host\TabletDroid.Host.csproj"
-    Start-Process "dotnet" -ArgumentList "run", "--project", "`"$hostProj`""
+    $dotnetExe = (Get-Command dotnet.exe -ErrorAction SilentlyContinue).Source
+    if (-not $dotnetExe) { $dotnetExe = "$dotnetDir\dotnet.exe" }
+    Start-Process $dotnetExe -ArgumentList "run", "--project", "`"$hostProj`""
 }

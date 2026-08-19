@@ -8,6 +8,19 @@ param(
     [int]$RamMb = 4096
 )
 
+$androidHome = "$env:LOCALAPPDATA\Android\Sdk"
+$jdkHome = "$env:LOCALAPPDATA\Android\Jdk"
+
+if (Test-Path $jdkHome) {
+    $env:JAVA_HOME = $jdkHome
+    $env:PATH = "$jdkHome\bin;$env:PATH"
+}
+if (Test-Path $androidHome) {
+    $env:ANDROID_HOME = $androidHome
+    $env:ANDROID_SDK_ROOT = $androidHome
+    $env:PATH = "$androidHome\platform-tools;$androidHome\emulator;$androidHome\cmdline-tools\latest\bin;$env:PATH"
+}
+
 $imagePackage = if ($Profile -eq "Play") {
     "system-images;android-34;google_apis_playstore;x86_64"
 } else {
@@ -22,7 +35,7 @@ Write-Host "==========================================================" -Foregro
 
 $avdManager = (Get-Command avdmanager -ErrorAction SilentlyContinue).Source
 if (-not $avdManager) {
-    $avdManager = "$env:LOCALAPPDATA\Android\Sdk\cmdline-tools\latest\bin\avdmanager.bat"
+    $avdManager = "$androidHome\cmdline-tools\latest\bin\avdmanager.bat"
 }
 
 if (-not (Test-Path $avdManager)) {
@@ -30,11 +43,11 @@ if (-not (Test-Path $avdManager)) {
     exit 1
 }
 
-# 기본 태블릿 AVD 생성 명령
+# 기본 태블릿 AVD 생성 명령 (device 옵션 없이 시스템 이미지 기반 생성 후 config.ini 커스터마이징)
 Write-Host "Running avdmanager create avd..." -ForegroundColor Gray
-& $avdManager create avd -n $AvdName -k $imagePackage --device "tablet" --force
+cmd.exe /c "echo no | `"$avdManager`" create avd -n `"$AvdName`" -k `"$imagePackage`" --force"
 
-# config.ini 속성 미세조정 (해상도 및 WHPX 최적화)
+# config.ini 속성 미세조정 (해상도 및 Z13 Flow 가속 최적화)
 $avdPath = "$env:USERPROFILE\.android\avd\$AvdName.avd\config.ini"
 if (Test-Path $avdPath) {
     Write-Host "Customizing config.ini for TabletDroid resolution & memory..." -ForegroundColor Yellow
@@ -42,7 +55,11 @@ if (Test-Path $avdPath) {
     $config += "hw.lcd.width = $Width"
     $config += "hw.lcd.height = $Height"
     $config += "hw.lcd.density = $Dpi"
-    $config += "hw.ramSize = $RamMb"
+    $config += "hw.ramSize = 6144"
+    $config += "hw.gpu.enabled = yes"
+    $config += "hw.gpu.mode = host"
+    $config += "hw.cpu.ncore = 8"
+    $config += "vm.heapSize = 512M"
     $config += "hw.keyboard = yes"
     $config += "hw.mainKeys = no"
     $config += "hw.accelerometer = yes"
