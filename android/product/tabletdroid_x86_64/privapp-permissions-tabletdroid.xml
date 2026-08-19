@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TabletDroid AOSP v0.3 Privileged App Permissions Allowlist
+  Location: /system/etc/permissions/privapp-permissions-tabletdroid.xml
+-->
+<permissions>
+    <privapp-permissions package="com.tabletdroid.guestagent">
+        <permission name="android.permission.WRITE_SECURE_SETTINGS" />
+        <permission name="android.permission.STATUS_BAR" />
+        <permission name="android.permission.INTERACT_ACROSS_USERS" />
+        <permission name="android.permission.MANAGE_ACTIVITY_TASKS" />
+    </privapp-permissions>
+</permissions>

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Threading;
 using TabletDroid.Bridge.Adb;
 using TabletDroid.Bridge.Clipboard;
 using TabletDroid.Bridge.Emulator;
@@ -19,7 +20,11 @@ public partial class MainWindow : Window
     private readonly IGuestAgentClient _guestClient;
     private readonly IClipboardBridge _clipboardBridge;
     private readonly IRotationBridge _rotationBridge;
-    private readonly IRuntimeBackend _runtimeBackend;
+    private readonly IWindowsOrientationWatcher _orientationWatcher;
+    private readonly AndroidEmulatorBackend _runtimeBackend;
+
+    private DispatcherTimer? _clipboardPollingTimer;
+    private string _lastObservedWindowsClipboard = string.Empty;
 
     public MainWindow()
     {
@@ -30,10 +35,17 @@ public partial class MainWindow : Window
         _consoleClient = new EmulatorConsoleClient();
         _guestClient = new GuestAgentClient();
         _clipboardBridge = new ClipboardBridge(_guestClient);
-        _rotationBridge = new RotationBridge(_consoleClient, _guestClient);
+        _rotationBridge = new RotationBridge(_adbClient, _consoleClient, _guestClient);
+        _orientationWatcher = new DebouncedOrientationWatcher(debounceMilliseconds: 300);
 
         _runtimeBackend = new AndroidEmulatorBackend(_adbClient, _consoleClient, _guestClient);
         _runtimeBackend.StateChanged += OnRuntimeStateChanged;
+
+        // Android ➔ Windows 클립보드 수신 이벤트 연결
+        _clipboardBridge.AndroidClipboardReceived += OnAndroidClipboardReceived;
+
+        // Windows 센서 방향 변경 ➔ Android 회전 브릿지 연결
+        _orientationWatcher.OrientationChanged += OnWindowsOrientationChanged;
 
         Loaded += OnMainWindowLoaded;
         Closing += OnMainWindowClosing;
@@ -43,13 +55,79 @@ public partial class MainWindow : Window
     {
         await _settingsService.LoadAsync();
         UpdateStatusUi(RuntimeState.Stopped);
+
         _clipboardBridge.Start();
+        _orientationWatcher.Start();
+
+        // Windows 클립보드 변경 폴링 타이머 (500ms 주기)
+        _clipboardPollingTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(500)
+        };
+        _clipboardPollingTimer.Tick += OnCheckWindowsClipboard;
+        _clipboardPollingTimer.Start();
     }
 
     private async void OnMainWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        _clipboardPollingTimer?.Stop();
+        _orientationWatcher.Stop();
         _clipboardBridge.Stop();
+
         await _runtimeBackend.StopAsync();
+    }
+
+    private void OnCheckWindowsClipboard(object? sender, EventArgs e)
+    {
+        try
+        {
+            if (System.Windows.Clipboard.ContainsText())
+            {
+                var currentText = System.Windows.Clipboard.GetText();
+                if (!string.IsNullOrEmpty(currentText) && currentText != _lastObservedWindowsClipboard)
+                {
+                    _lastObservedWindowsClipboard = currentText;
+                    _ = _clipboardBridge.HandleWindowsClipboardChangedAsync(currentText);
+                }
+            }
+        }
+        catch
+        {
+            // Clipboard lock 충돌 방지
+        }
+    }
+
+    private void OnAndroidClipboardReceived(object? sender, string text)
+    {
+        Dispatcher.Invoke(() =>
+        {
+            try
+            {
+                _lastObservedWindowsClipboard = text;
+                System.Windows.Clipboard.SetText(text);
+                LogText.Text = $"Synced clipboard from Android: \"{(text.Length > 20 ? text[..20] + "..." : text)}\"";
+            }
+            catch
+            {
+                // ignore
+            }
+        });
+    }
+
+    private async void OnWindowsOrientationChanged(object? sender, Protocol.DeviceOrientation orientation)
+    {
+        if (_runtimeBackend.State == RuntimeState.Ready)
+        {
+            await _rotationBridge.SetOrientationAsync(
+                orientation,
+                OrientationPolicy.Auto,
+                deviceSerial: _runtimeBackend.DeviceSerial);
+
+            Dispatcher.Invoke(() =>
+            {
+                LogText.Text = $"Rotated display to {orientation} (auto sensor).";
+            });
+        }
     }
 
     private void OnRuntimeStateChanged(object? sender, RuntimeState state)
@@ -89,7 +167,7 @@ public partial class MainWindow : Window
         var success = await _runtimeBackend.StartAsync(config);
         if (success)
         {
-            LogText.Text = "Android Runtime is READY. Fullscreen mode active.";
+            LogText.Text = $"Android Runtime is READY on {_runtimeBackend.DeviceSerial}. Fullscreen mode active.";
         }
         else
         {
@@ -139,25 +217,25 @@ public partial class MainWindow : Window
         LogText.Text = $"Setting display orientation and launching {appName}...";
 
         // 화면 방향 정책 적용
-        if (profile.Orientation == OrientationPolicy.PortraitPreferred)
-        {
-            await _rotationBridge.SetOrientationAsync(Protocol.DeviceOrientation.OrientationRight90, profile.Orientation);
-        }
-        else
-        {
-            await _rotationBridge.SetOrientationAsync(Protocol.DeviceOrientation.OrientationNatural, profile.Orientation);
-        }
+        var targetOrientation = profile.Orientation == OrientationPolicy.PortraitPreferred
+            ? Protocol.DeviceOrientation.OrientationRight90
+            : Protocol.DeviceOrientation.OrientationNatural;
 
-        // 앱 실행 (GuestAgent 우선 시도 후 ADB Fallback)
+        await _rotationBridge.SetOrientationAsync(
+            targetOrientation,
+            profile.Orientation,
+            deviceSerial: _runtimeBackend.DeviceSerial);
+
+        // 앱 실행 (GuestAgent RPC 우선 시도 후 ADB Fallback)
         bool launched = false;
-        if (_guestClient.IsConnected)
+        if (_guestClient.IsReady)
         {
             launched = await _guestClient.SendLaunchAppAsync(packageName);
         }
 
         if (!launched)
         {
-            launched = await _adbClient.LaunchAppAsync("emulator-5554", packageName);
+            launched = await _adbClient.LaunchAppAsync(_runtimeBackend.DeviceSerial, packageName);
         }
 
         if (launched)

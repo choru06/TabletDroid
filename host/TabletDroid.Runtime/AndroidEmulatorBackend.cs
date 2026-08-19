@@ -16,10 +16,11 @@ public class AndroidEmulatorBackend : IRuntimeBackend
 
     private Process? _emulatorProcess;
     private RuntimeConfiguration? _currentConfig;
-    private readonly string _deviceSerial = "emulator-5554";
+    private string _deviceSerial = "emulator-5554";
 
     public RuntimeState State => _stateMachine.CurrentState;
     public RuntimeConfiguration? CurrentConfig => _currentConfig;
+    public string DeviceSerial => _deviceSerial;
     public event EventHandler<RuntimeState>? StateChanged;
 
     public AndroidEmulatorBackend(
@@ -42,6 +43,9 @@ public class AndroidEmulatorBackend : IRuntimeBackend
         }
 
         _currentConfig = config;
+        // ConsolePort에 따라 emulator-{ConsolePort}로 디바이스 시리얼 동적 계산
+        _deviceSerial = $"emulator-{config.ConsolePort}";
+
         _stateMachine.TransitionTo(RuntimeState.Starting);
 
         try
@@ -83,7 +87,7 @@ public class AndroidEmulatorBackend : IRuntimeBackend
                 FileName = emulatorBinary,
                 Arguments = argsBuilder.ToString().Trim(),
                 UseShellExecute = false,
-                CreateNoWindow = false // 초기 실행 시 창 표시
+                CreateNoWindow = false
             };
 
             _emulatorProcess = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -116,10 +120,10 @@ public class AndroidEmulatorBackend : IRuntimeBackend
             // Emulator Console 연결
             await _consoleClient.ConnectAsync("127.0.0.1", config.ConsolePort, ct: ct);
 
-            // GuestAgent 연결 시도 (백그라운드)
+            // GuestAgent 연결 시도 및 Handshake 대기 (백그라운드)
             _ = Task.Run(async () =>
             {
-                for (int i = 0; i < 10; i++)
+                for (int i = 0; i < 15; i++)
                 {
                     if (await _guestClient.ConnectAsync("127.0.0.1", config.GuestAgentPort))
                     {
@@ -174,7 +178,6 @@ public class AndroidEmulatorBackend : IRuntimeBackend
 
             if (_emulatorProcess != null && !_emulatorProcess.HasExited)
             {
-                // 콘솔 또는 ADB를 통한 우아한 종료 시도
                 try
                 {
                     await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "reboot -p", ct);
@@ -208,8 +211,7 @@ public class AndroidEmulatorBackend : IRuntimeBackend
     {
         if (State != RuntimeState.Ready) return false;
 
-        // 절전 모드 전환 (화면 끄기 또는 snapshot save)
-        await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "input keyevent 26", ct); // POWER key
+        await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "input keyevent 26", ct);
         _stateMachine.TransitionTo(RuntimeState.Suspended);
         return true;
     }
@@ -218,8 +220,7 @@ public class AndroidEmulatorBackend : IRuntimeBackend
     {
         if (State != RuntimeState.Suspended) return false;
 
-        // 화면 켜기
-        await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "input keyevent 224", ct); // WAKEUP key
+        await _adbClient.ExecuteShellCommandAsync(_deviceSerial, "input keyevent 224", ct);
         _stateMachine.TransitionTo(RuntimeState.Ready);
         return true;
     }

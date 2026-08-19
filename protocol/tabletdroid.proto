@@ -9,7 +9,8 @@ option java_outer_classname = "TabletDroidProto";
 // Host ↔ Guest 최상위 메시지 래퍼
 message TabletDroidMessage {
   string message_id = 1;
-  int64 timestamp = 2;
+  string reply_to = 2;   // RPC Request-Response Correlation ID
+  int64 timestamp = 3;
 
   oneof payload {
     // 헬스체크 및 세션
@@ -80,10 +81,10 @@ message ClipboardSyncEvent {
 // 디스플레이 및 화면 방향 제어
 // -------------------------------------------------------------
 enum DeviceOrientation {
-  ORIENTATION_NATURAL = 0;   // 0도 (보통 가로 1920x1200)
-  ORIENTATION_RIGHT_90 = 1;  // 90도 시계방향
+  ORIENTATION_NATURAL = 0;      // 0도 (가로 1920x1200)
+  ORIENTATION_RIGHT_90 = 1;     // 90도 시계방향 (세로 1200x1920)
   ORIENTATION_INVERTED_180 = 2; // 180도
-  ORIENTATION_LEFT_270 = 3;  // 270도
+  ORIENTATION_LEFT_270 = 3;     // 270도
 }
 
 message SetOrientationRequest {

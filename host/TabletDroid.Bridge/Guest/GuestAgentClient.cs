@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,12 +11,17 @@ namespace TabletDroid.Bridge.Guest;
 public interface IGuestAgentClient : IAsyncDisposable
 {
     bool IsConnected { get; }
+    bool IsReady { get; }
+    HandshakeResponse? GuestInfo { get; }
+
     event EventHandler<ClipboardSyncEvent>? ClipboardSyncReceived;
     event EventHandler<AppLifecycleEvent>? AppLifecycleReceived;
     event EventHandler<OrientationChangedEvent>? OrientationChangedReceived;
+    event EventHandler<bool>? ReadyStateChanged;
 
     Task<bool> ConnectAsync(string host = "127.0.0.1", int port = 28888, CancellationToken ct = default);
     Task SendMessageAsync(TabletDroidMessage message, CancellationToken ct = default);
+    Task<TabletDroidMessage?> SendRequestAsync(TabletDroidMessage request, TimeSpan timeout, CancellationToken ct = default);
     Task<bool> SendClipboardAsync(string text, long revisionId, CancellationToken ct = default);
     Task<bool> SendOrientationAsync(DeviceOrientation orientation, bool lockOrientation = false, CancellationToken ct = default);
     Task<bool> SendLaunchAppAsync(string packageName, string? activityName = null, CancellationToken ct = default);
@@ -28,12 +34,19 @@ public class GuestAgentClient : IGuestAgentClient
     private NetworkStream? _stream;
     private CancellationTokenSource? _receiveCts;
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<TabletDroidMessage>> _pendingRequests = new();
+
+    private bool _isReady = false;
+    private HandshakeResponse? _guestInfo;
 
     public bool IsConnected => _tcpClient?.Connected ?? false;
+    public bool IsReady => _isReady && IsConnected;
+    public HandshakeResponse? GuestInfo => _guestInfo;
 
     public event EventHandler<ClipboardSyncEvent>? ClipboardSyncReceived;
     public event EventHandler<AppLifecycleEvent>? AppLifecycleReceived;
     public event EventHandler<OrientationChangedEvent>? OrientationChangedReceived;
+    public event EventHandler<bool>? ReadyStateChanged;
 
     public async Task<bool> ConnectAsync(string host = "127.0.0.1", int port = 28888, CancellationToken ct = default)
     {
@@ -46,20 +59,28 @@ public class GuestAgentClient : IGuestAgentClient
             _receiveCts = new CancellationTokenSource();
             _ = Task.Run(() => ReceiveLoopAsync(_receiveCts.Token));
 
-            // 핸드셰이크 요청 전송
-            var handshake = new TabletDroidMessage
+            // 핸드셰이크 요청 전송 및 응답 대기 (진짜 Ready 상태 보장)
+            var handshakeReq = new TabletDroidMessage
             {
                 MessageId = Guid.NewGuid().ToString(),
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 HandshakeRequest = new HandshakeRequest
                 {
-                    HostVersion = "0.2.0",
+                    HostVersion = "0.1.0",
                     OsVersion = Environment.OSVersion.ToString()
                 }
             };
-            await SendMessageAsync(handshake, ct);
 
-            return true;
+            var response = await SendRequestAsync(handshakeReq, TimeSpan.FromSeconds(5), ct);
+            if (response != null && response.PayloadCase == TabletDroidMessage.PayloadOneofCase.HandshakeResponse)
+            {
+                _guestInfo = response.HandshakeResponse;
+                _isReady = true;
+                ReadyStateChanged?.Invoke(this, true);
+                return true;
+            }
+
+            return false;
         }
         catch
         {
@@ -89,6 +110,33 @@ public class GuestAgentClient : IGuestAgentClient
         finally
         {
             _sendLock.Release();
+        }
+    }
+
+    public async Task<TabletDroidMessage?> SendRequestAsync(TabletDroidMessage request, TimeSpan timeout, CancellationToken ct = default)
+    {
+        var tcs = new TaskCompletionSource<TabletDroidMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pendingRequests[request.MessageId] = tcs;
+
+        try
+        {
+            await SendMessageAsync(request, ct);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(timeout);
+
+            using (cts.Token.Register(() => tcs.TrySetCanceled()))
+            {
+                return await tcs.Task;
+            }
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            _pendingRequests.TryRemove(request.MessageId, out _);
         }
     }
 
@@ -159,8 +207,14 @@ public class GuestAgentClient : IGuestAgentClient
                 }
             };
 
-            await SendMessageAsync(msg, ct);
-            return true;
+            // RPC Request-Response Correlation 대기
+            var response = await SendRequestAsync(msg, TimeSpan.FromSeconds(5), ct);
+            if (response != null && response.PayloadCase == TabletDroidMessage.PayloadOneofCase.LaunchAppResponse)
+            {
+                return response.LaunchAppResponse.Success;
+            }
+
+            return false;
         }
         catch
         {
@@ -176,14 +230,13 @@ public class GuestAgentClient : IGuestAgentClient
         {
             while (!ct.IsCancellationRequested && _stream != null)
             {
-                // 4바이트 길이 헤더 읽기
                 if (!await ReadExactAsync(_stream, headerBuffer, 4, ct))
                 {
                     break;
                 }
 
                 var length = BinaryPrimitives.ReadUInt32BigEndian(headerBuffer);
-                if (length == 0 || length > 16 * 1024 * 1024) // 16MB 제한
+                if (length == 0 || length > 16 * 1024 * 1024)
                 {
                     break;
                 }
@@ -200,7 +253,7 @@ public class GuestAgentClient : IGuestAgentClient
         }
         catch
         {
-            // 수신 중 오류 발생 시 루프 종료
+            // socket error
         }
         finally
         {
@@ -222,6 +275,13 @@ public class GuestAgentClient : IGuestAgentClient
 
     private void DispatchMessage(TabletDroidMessage message)
     {
+        // 1. Reply_to가 있는 RPC 응답인 경우 TCS 완료 처리
+        if (!string.IsNullOrEmpty(message.ReplyTo) && _pendingRequests.TryGetValue(message.ReplyTo, out var tcs))
+        {
+            tcs.TrySetResult(message);
+        }
+
+        // 2. 이벤트 디스패치
         switch (message.PayloadCase)
         {
             case TabletDroidMessage.PayloadOneofCase.ClipboardSync:
@@ -238,6 +298,15 @@ public class GuestAgentClient : IGuestAgentClient
 
     public async Task DisconnectAsync()
     {
+        _isReady = false;
+        ReadyStateChanged?.Invoke(this, false);
+
+        foreach (var tcs in _pendingRequests.Values)
+        {
+            tcs.TrySetCanceled();
+        }
+        _pendingRequests.Clear();
+
         try
         {
             _receiveCts?.Cancel();
