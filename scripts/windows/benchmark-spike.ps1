@@ -5,7 +5,7 @@ param(
     [int]$WarmupSeconds = 10,
     [int]$MeasurementSeconds = 30,
     [double]$VelocityPxSec = 800.0,
-    [ValidateSet("Canonical", "ObserverEffectA_B", "GpuRendererComparison", "SurfaceFlinger4Way", "Single")]
+    [ValidateSet("Canonical", "GpuRendererComparison", "ObserverEffectA_B", "DiagnosticTelemetry", "Single")]
     [string]$Mode = "Canonical",
     [int]$Trials = 5,
     [string]$OutputDir = "$PSScriptRoot\..\..\docs\performance"
@@ -106,8 +106,8 @@ function Measure-CanonicalTrial {
         [string]$testLabel = "Test",
         [string]$conditionKey = "Baseline",
         [int]$trialNum = 1,
-        [bool]$enableCpu = $true,
-        [bool]$enableGpu = $true
+        [bool]$enableCpu = $false,
+        [bool]$enableGpu = $false
     )
 
     Write-Host "  -> [Trial $trialNum] Running Workload ($testLabel | Warmup:${warmupSec}s, Measure:${measureSec}s | CPU:$enableCpu, GPU:$enableGpu)..." -ForegroundColor Gray
@@ -145,16 +145,17 @@ function Measure-CanonicalTrial {
     }
     $qemuPid = if ($qemuProc) { $qemuProc.Id } else { 0 }
 
-    # Setup isolated Background Telemetry Worker via Runspace
+    # Setup isolated Background Telemetry Worker via Runspace (Only if requested)
     $sharedSamples = [System.Collections.ArrayList]::Synchronized([System.Collections.ArrayList]::new())
     $stopFlag = [System.Collections.Hashtable]::Synchronized(@{ Stopped = $false })
     $rs = $null
     $ps = $null
     $asyncHandle = $null
-    $telemetryStatus = "OK"
+    $telemetryStatus = "OFF"
     $telemetryError = "NONE"
 
     if (($enableCpu -or $enableGpu) -and $qemuPid -gt 0) {
+        $telemetryStatus = "OK"
         try {
             $rs = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
             $rs.Open()
@@ -269,7 +270,7 @@ function Measure-CanonicalTrial {
     $actualDistancePx = 0.0
     $inAppElapsedMs = 0
     $inAppMeasureFrames = 0
-    $workloadVersion = "1.0.0"
+    $workloadVersion = "UNKNOWN"
 
     $jsonMatches = [regex]::Matches($logcatRaw, 'BENCHMARK_STATUS_JSON:\s*(\{.*\})')
     if ($jsonMatches.Count -gt 0) {
@@ -328,12 +329,27 @@ function Measure-CanonicalTrial {
     $statusReason = "VALID"
     $isValid = $true
 
+    $expectedDistance = $velocity * $actualDurationSec
+    $expectedDurationMs = $measureSec * 1000
+
     if (-not $targetLayerFound) {
         $isValid = $false
         $statusReason = "INVALID / TARGET_LAYER_NOT_FOUND"
     } elseif ($capturedRecords -eq 0) {
         $isValid = $false
         $statusReason = "INVALID / GFXINFO_UNAVAILABLE"
+    } elseif ($workloadVersion -ne "1.0.0") {
+        $isValid = $false
+        $statusReason = "INVALID / WORKLOAD_VERSION_MISMATCH"
+    } elseif ($inAppStatus -ne "COMPLETE") {
+        $isValid = $false
+        $statusReason = "INVALID / WORKLOAD_NOT_COMPLETE"
+    } elseif ($inAppElapsedMs -lt ($expectedDurationMs * 0.90) -or $inAppElapsedMs -gt ($expectedDurationMs * 1.10 + 2000)) {
+        $isValid = $false
+        $statusReason = "INVALID / WORKLOAD_DURATION_MISMATCH"
+    } elseif ($expectedDistance -gt 0 -and (([math]::Abs($actualDistancePx - $expectedDistance) / $expectedDistance) -gt 0.10)) {
+        $isValid = $false
+        $statusReason = "INVALID / WORKLOAD_DISTANCE_OUT_OF_RANGE"
     } elseif ($enableCpu -and $cpuSamplesList.Count -eq 0) {
         $isValid = $false
         $statusReason = "INVALID / CPU_TELEMETRY_EMPTY"
@@ -372,6 +388,7 @@ function Measure-CanonicalTrial {
         WorkloadVersion = $workloadVersion
         RequestedVelocity = $velocity
         ActualDistancePx = $actualDistancePx
+        ExpectedDistancePx = [math]::Round($expectedDistance, 1)
         ActualDurationSec = $actualDurationSec
         SfLayerName = $targetLayerName
         SfStartFrames = $sfTotalFramesStart
@@ -402,9 +419,139 @@ $allTrialResults = [System.Collections.Generic.List[PSCustomObject]]::new()
 $conditionSummaries = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 if ($Mode -eq "Canonical") {
+    # Telemetry OFF for pure, unperturbed baseline measurement
     $condTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $name = "Canonical BenchmarkApp Workload"
+    $name = "Canonical BenchmarkApp (Telemetry OFF)"
     $key = "Canonical_Workload"
+
+    for ($t = 1; $t -le $Trials; $t++) {
+        $trialData = Measure-CanonicalTrial -pkg $PackageName -warmupSec $WarmupSeconds -measureSec $MeasurementSeconds -velocity $VelocityPxSec -testLabel $name -conditionKey $key -trialNum $t -enableCpu $false -enableGpu $false
+        $allTrialResults.Add($trialData)
+        if ($trialData.IsValid) { $condTrials.Add($trialData) }
+        Start-Sleep -Milliseconds 600
+    }
+
+    $validCount = $condTrials.Count
+    if ($validCount -ge 1) {
+        $sortedFps = $condTrials | Select-Object -ExpandProperty PresentedFps | Sort-Object
+        $sortedDist = $condTrials | Select-Object -ExpandProperty ActualDistancePx | Sort-Object
+        $sortedLatency = $condTrials | Select-Object -ExpandProperty FrameLatencyAvgMs | Sort-Object
+        $sortedP50 = $condTrials | Select-Object -ExpandProperty P50Ms | Sort-Object
+        $sortedP90 = $condTrials | Select-Object -ExpandProperty P90Ms | Sort-Object
+        $sortedP99 = $condTrials | Select-Object -ExpandProperty P99Ms | Sort-Object
+        $sortedJank = $condTrials | Select-Object -ExpandProperty JankPercent | Sort-Object
+
+        $medianIdx = [int]($validCount / 2)
+        $avgFps = ($sortedFps | Measure-Object -Average).Average
+        $sumSqFps = 0.0; foreach ($v in $sortedFps) { $sumSqFps += [math]::Pow($v - $avgFps, 2) }
+        $stdDevFps = [math]::Round([math]::Sqrt($sumSqFps / $validCount), 2)
+        $cvFps = if ($avgFps -gt 0) { [math]::Round(($stdDevFps / $avgFps) * 100.0, 1) } else { 0.0 }
+
+        $avgDist = ($sortedDist | Measure-Object -Average).Average
+        $sumSqDist = 0.0; foreach ($d in $sortedDist) { $sumSqDist += [math]::Pow($d - $avgDist, 2) }
+        $stdDevDist = [math]::Round([math]::Sqrt($sumSqDist / $validCount), 2)
+        $cvDist = if ($avgDist -gt 0) { [math]::Round(($stdDevDist / $avgDist) * 100.0, 1) } else { 0.0 }
+
+        $conditionSummaries.Add([PSCustomObject]@{
+            Condition = $name
+            Key = $key
+            ValidTrials = "$validCount / $Trials"
+            PresentedFpsMedian = $sortedFps[$medianIdx]
+            PresentedFpsMin = ($sortedFps | Measure-Object -Minimum).Minimum
+            PresentedFpsMax = ($sortedFps | Measure-Object -Maximum).Maximum
+            PresentedFpsStdDev = $stdDevFps
+            PresentedFpsCVPercent = $cvFps
+            ActualDistanceMedian = $sortedDist[$medianIdx]
+            DistanceCVPercent = $cvDist
+            LatencyAvgMedianMs = $sortedLatency[$medianIdx]
+            P50MedianMs = $sortedP50[$medianIdx]
+            P90MedianMs = $sortedP90[$medianIdx]
+            P99MedianMs = $sortedP99[$medianIdx]
+            JankMedianPercent = $sortedJank[$medianIdx]
+            CpuAvgPercent = "OFF"
+            Gpu3DAvgPercent = "OFF"
+        })
+    }
+} elseif ($Mode -eq "GpuRendererComparison") {
+    # Telemetry OFF for pure, unperturbed renderer comparison
+    $matrix = @(
+        @{ Key = "CondA_SkiaGL";  Name = "A. Skia OpenGL (skiagl)";  Renderer = "skiagl" },
+        @{ Key = "CondB_SkiaVK";  Name = "B. Skia Vulkan (skiavk)";  Renderer = "skiavk" }
+    )
+
+    foreach ($cond in $matrix) {
+        $key = $cond.Key
+        $name = $cond.Name
+        $renderer = $cond.Renderer
+
+        Write-Host "`n================================================================================" -ForegroundColor Yellow
+        Write-Host " Setting GPU HWUI Renderer: $name ($renderer)" -ForegroundColor Yellow
+        Write-Host "================================================================================" -ForegroundColor Yellow
+
+        & $adb -s $DeviceSerial shell setprop debug.hwui.renderer $renderer > $null 2>&1
+        Start-Sleep -Milliseconds 300
+        $readRenderer = (& $adb -s $DeviceSerial shell getprop debug.hwui.renderer 2>$null).Trim()
+        Write-Host "  [OK] Read-back verified: debug.hwui.renderer=$readRenderer" -ForegroundColor Green
+
+        & $adb -s $DeviceSerial shell am force-stop $PackageName > $null 2>&1
+        Start-Sleep -Milliseconds 500
+        & $adb -s $DeviceSerial shell am start -n $ActivityName > $null 2>&1
+        Start-Sleep -Seconds 2
+
+        $condTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
+        for ($t = 1; $t -le $Trials; $t++) {
+            $trialData = Measure-CanonicalTrial -pkg $PackageName -warmupSec $WarmupSeconds -measureSec $MeasurementSeconds -velocity $VelocityPxSec -testLabel $name -conditionKey $key -trialNum $t -enableCpu $false -enableGpu $false
+            $allTrialResults.Add($trialData)
+            if ($trialData.IsValid) { $condTrials.Add($trialData) }
+            Start-Sleep -Milliseconds 600
+        }
+
+        $validCount = $condTrials.Count
+        if ($validCount -ge 1) {
+            $sortedFps = $condTrials | Select-Object -ExpandProperty PresentedFps | Sort-Object
+            $sortedDist = $condTrials | Select-Object -ExpandProperty ActualDistancePx | Sort-Object
+            $sortedLatency = $condTrials | Select-Object -ExpandProperty FrameLatencyAvgMs | Sort-Object
+            $sortedP50 = $condTrials | Select-Object -ExpandProperty P50Ms | Sort-Object
+            $sortedP90 = $condTrials | Select-Object -ExpandProperty P90Ms | Sort-Object
+            $sortedP99 = $condTrials | Select-Object -ExpandProperty P99Ms | Sort-Object
+            $sortedJank = $condTrials | Select-Object -ExpandProperty JankPercent | Sort-Object
+
+            $medianIdx = [int]($validCount / 2)
+            $avgFps = ($sortedFps | Measure-Object -Average).Average
+            $sumSqFps = 0.0; foreach ($v in $sortedFps) { $sumSqFps += [math]::Pow($v - $avgFps, 2) }
+            $stdDevFps = [math]::Round([math]::Sqrt($sumSqFps / $validCount), 2)
+            $cvFps = if ($avgFps -gt 0) { [math]::Round(($stdDevFps / $avgFps) * 100.0, 1) } else { 0.0 }
+
+            $avgDist = ($sortedDist | Measure-Object -Average).Average
+            $sumSqDist = 0.0; foreach ($d in $sortedDist) { $sumSqDist += [math]::Pow($d - $avgDist, 2) }
+            $stdDevDist = [math]::Round([math]::Sqrt($sumSqDist / $validCount), 2)
+            $cvDist = if ($avgDist -gt 0) { [math]::Round(($stdDevDist / $avgDist) * 100.0, 1) } else { 0.0 }
+
+            $conditionSummaries.Add([PSCustomObject]@{
+                Condition = $name
+                Key = $key
+                ValidTrials = "$validCount / $Trials"
+                PresentedFpsMedian = $sortedFps[$medianIdx]
+                PresentedFpsMin = ($sortedFps | Measure-Object -Minimum).Minimum
+                PresentedFpsMax = ($sortedFps | Measure-Object -Maximum).Maximum
+                PresentedFpsStdDev = $stdDevFps
+                PresentedFpsCVPercent = $cvFps
+                ActualDistanceMedian = $sortedDist[$medianIdx]
+                DistanceCVPercent = $cvDist
+                LatencyAvgMedianMs = $sortedLatency[$medianIdx]
+                P50MedianMs = $sortedP50[$medianIdx]
+                P90MedianMs = $sortedP90[$medianIdx]
+                P99MedianMs = $sortedP99[$medianIdx]
+                JankMedianPercent = $sortedJank[$medianIdx]
+                CpuAvgPercent = "OFF"
+                Gpu3DAvgPercent = "OFF"
+            })
+        }
+    }
+} elseif ($Mode -eq "DiagnosticTelemetry") {
+    $condTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $name = "Diagnostic Telemetry Run (CPU+GPU ON)"
+    $key = "Diag_Telemetry"
 
     for ($t = 1; $t -le $Trials; $t++) {
         $trialData = Measure-CanonicalTrial -pkg $PackageName -warmupSec $WarmupSeconds -measureSec $MeasurementSeconds -velocity $VelocityPxSec -testLabel $name -conditionKey $key -trialNum $t -enableCpu $true -enableGpu $true
@@ -521,85 +668,8 @@ if ($Mode -eq "Canonical") {
                 P90MedianMs = $sortedP90[$medianIdx]
                 P99MedianMs = $sortedP99[$medianIdx]
                 JankMedianPercent = $sortedJank[$medianIdx]
-                CpuAvgPercent = $sortedCpu[$medianIdx]
-                Gpu3DAvgPercent = $sortedGpu3D[$medianIdx]
-            })
-        }
-    }
-} elseif ($Mode -eq "GpuRendererComparison") {
-    $matrix = @(
-        @{ Key = "CondA_SkiaGL";  Name = "A. Skia OpenGL (skiagl)";  Renderer = "skiagl" },
-        @{ Key = "CondB_SkiaVK";  Name = "B. Skia Vulkan (skiavk)";  Renderer = "skiavk" }
-    )
-
-    foreach ($cond in $matrix) {
-        $key = $cond.Key
-        $name = $cond.Name
-        $renderer = $cond.Renderer
-
-        Write-Host "`n================================================================================" -ForegroundColor Yellow
-        Write-Host " Setting GPU HWUI Renderer: $name ($renderer)" -ForegroundColor Yellow
-        Write-Host "================================================================================" -ForegroundColor Yellow
-
-        & $adb -s $DeviceSerial shell setprop debug.hwui.renderer $renderer > $null 2>&1
-        Start-Sleep -Milliseconds 300
-        $readRenderer = (& $adb -s $DeviceSerial shell getprop debug.hwui.renderer 2>$null).Trim()
-        Write-Host "  [OK] Read-back verified: debug.hwui.renderer=$readRenderer" -ForegroundColor Green
-
-        & $adb -s $DeviceSerial shell am force-stop $PackageName > $null 2>&1
-        Start-Sleep -Milliseconds 500
-        & $adb -s $DeviceSerial shell am start -n $ActivityName > $null 2>&1
-        Start-Sleep -Seconds 2
-
-        $condTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
-        for ($t = 1; $t -le $Trials; $t++) {
-            $trialData = Measure-CanonicalTrial -pkg $PackageName -warmupSec $WarmupSeconds -measureSec $MeasurementSeconds -velocity $VelocityPxSec -testLabel $name -conditionKey $key -trialNum $t -enableCpu $true -enableGpu $true
-            $allTrialResults.Add($trialData)
-            if ($trialData.IsValid) { $condTrials.Add($trialData) }
-            Start-Sleep -Milliseconds 600
-        }
-
-        $validCount = $condTrials.Count
-        if ($validCount -ge 1) {
-            $sortedFps = $condTrials | Select-Object -ExpandProperty PresentedFps | Sort-Object
-            $sortedDist = $condTrials | Select-Object -ExpandProperty ActualDistancePx | Sort-Object
-            $sortedLatency = $condTrials | Select-Object -ExpandProperty FrameLatencyAvgMs | Sort-Object
-            $sortedP50 = $condTrials | Select-Object -ExpandProperty P50Ms | Sort-Object
-            $sortedP90 = $condTrials | Select-Object -ExpandProperty P90Ms | Sort-Object
-            $sortedP99 = $condTrials | Select-Object -ExpandProperty P99Ms | Sort-Object
-            $sortedJank = $condTrials | Select-Object -ExpandProperty JankPercent | Sort-Object
-            $sortedCpu = $condTrials | Select-Object -ExpandProperty CpuAvgPercent | Sort-Object
-            $sortedGpu3D = $condTrials | Select-Object -ExpandProperty Gpu3DAvgPercent | Sort-Object
-
-            $medianIdx = [int]($validCount / 2)
-            $avgFps = ($sortedFps | Measure-Object -Average).Average
-            $sumSqFps = 0.0; foreach ($v in $sortedFps) { $sumSqFps += [math]::Pow($v - $avgFps, 2) }
-            $stdDevFps = [math]::Round([math]::Sqrt($sumSqFps / $validCount), 2)
-            $cvFps = if ($avgFps -gt 0) { [math]::Round(($stdDevFps / $avgFps) * 100.0, 1) } else { 0.0 }
-
-            $avgDist = ($sortedDist | Measure-Object -Average).Average
-            $sumSqDist = 0.0; foreach ($d in $sortedDist) { $sumSqDist += [math]::Pow($d - $avgDist, 2) }
-            $stdDevDist = [math]::Round([math]::Sqrt($sumSqDist / $validCount), 2)
-            $cvDist = if ($avgDist -gt 0) { [math]::Round(($stdDevDist / $avgDist) * 100.0, 1) } else { 0.0 }
-
-            $conditionSummaries.Add([PSCustomObject]@{
-                Condition = $name
-                Key = $key
-                ValidTrials = "$validCount / $Trials"
-                PresentedFpsMedian = $sortedFps[$medianIdx]
-                PresentedFpsMin = ($sortedFps | Measure-Object -Minimum).Minimum
-                PresentedFpsMax = ($sortedFps | Measure-Object -Maximum).Maximum
-                PresentedFpsStdDev = $stdDevFps
-                PresentedFpsCVPercent = $cvFps
-                ActualDistanceMedian = $sortedDist[$medianIdx]
-                DistanceCVPercent = $cvDist
-                LatencyAvgMedianMs = $sortedLatency[$medianIdx]
-                P50MedianMs = $sortedP50[$medianIdx]
-                P90MedianMs = $sortedP90[$medianIdx]
-                P99MedianMs = $sortedP99[$medianIdx]
-                JankMedianPercent = $sortedJank[$medianIdx]
-                CpuAvgPercent = $sortedCpu[$medianIdx]
-                Gpu3DAvgPercent = $sortedGpu3D[$medianIdx]
+                CpuAvgPercent = if ($enCpu) { $sortedCpu[$medianIdx] } else { "OFF" }
+                Gpu3DAvgPercent = if ($enGpu) { $sortedGpu3D[$medianIdx] } else { "OFF" }
             })
         }
     }
@@ -617,11 +687,11 @@ if (-not (Test-Path $OutputDir)) {
 }
 
 $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-$reportFileName = if ($Mode -eq "Canonical") { "canonical_benchmark_workload.md" } elseif ($Mode -eq "ObserverEffectA_B") { "measurement_observer_effect.md" } elseif ($Mode -eq "GpuRendererComparison") { "gpu_backend_comparison.md" } else { "surfaceflinger_ab_validation.md" }
+$reportFileName = if ($Mode -eq "Canonical") { "canonical_benchmark_workload.md" } elseif ($Mode -eq "ObserverEffectA_B") { "measurement_observer_effect.md" } elseif ($Mode -eq "GpuRendererComparison") { "gpu_backend_comparison.md" } elseif ($Mode -eq "DiagnosticTelemetry") { "diagnostic_telemetry.md" } else { "surfaceflinger_ab_validation.md" }
 $reportFile = "$OutputDir\$reportFileName"
 
 $mdLines = [System.Collections.Generic.List[string]]::new()
-$reportTitle = if ($Mode -eq "Canonical") { "# TabletDroid v0.1 Canonical Deterministic Benchmark Workload Report" } elseif ($Mode -eq "ObserverEffectA_B") { "# TabletDroid v0.1 Measurement Observer Effect Validation Report" } elseif ($Mode -eq "GpuRendererComparison") { "# TabletDroid v0.1 GPU HWUI Renderer Comparison Report (OpenGL vs Vulkan)" } else { "# TabletDroid v0.1 SurfaceFlinger 4-Way A/B Validation Report" }
+$reportTitle = if ($Mode -eq "Canonical") { "# TabletDroid v0.1 Canonical Deterministic Benchmark Workload Report (Telemetry OFF)" } elseif ($Mode -eq "ObserverEffectA_B") { "# TabletDroid v0.1 Measurement Observer Effect Validation Report" } elseif ($Mode -eq "GpuRendererComparison") { "# TabletDroid v0.1 GPU HWUI Renderer Comparison Report (OpenGL vs Vulkan - Telemetry OFF)" } elseif ($Mode -eq "DiagnosticTelemetry") { "# TabletDroid v0.1 Diagnostic Host Telemetry Report" } else { "# TabletDroid v0.1 SurfaceFlinger 4-Way A/B Validation Report" }
 
 $mdLines.Add($reportTitle)
 $mdLines.Add("")
@@ -644,95 +714,90 @@ $mdLines.Add("| Condition | Valid Trials | Presented FPS | FPS [Min, Max] | StdD
 $mdLines.Add("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
 
 foreach ($s in $conditionSummaries) {
-    $row = "| **" + $s.Condition + "** | " + $s.ValidTrials + " | **" + $s.PresentedFpsMedian + " FPS** | [" + $s.PresentedFpsMin + ", " + $s.PresentedFpsMax + "] | " + $s.PresentedFpsStdDev + " | " + $s.PresentedFpsCVPercent + "% | " + $s.ActualDistanceMedian + " px | " + $s.DistanceCVPercent + "% | " + $s.LatencyAvgMedianMs + " ms | " + $s.P50MedianMs + " ms | " + $s.P90MedianMs + " ms | " + $s.P99MedianMs + " ms | " + $s.JankMedianPercent + "% | " + $s.CpuAvgPercent + "% | " + $s.Gpu3DAvgPercent + "% |"
+    $row = "| **" + $s.Condition + "** | " + $s.ValidTrials + " | **" + $s.PresentedFpsMedian + " FPS** | [" + $s.PresentedFpsMin + ", " + $s.PresentedFpsMax + "] | " + $s.PresentedFpsStdDev + " | " + $s.PresentedFpsCVPercent + "% | " + $s.ActualDistanceMedian + " px | " + $s.DistanceCVPercent + "% | " + $s.LatencyAvgMedianMs + " ms | " + $s.P50MedianMs + " ms | " + $s.P90MedianMs + " ms | " + $s.P99MedianMs + " ms | " + $s.JankMedianPercent + "% | " + $s.CpuAvgPercent + " | " + $s.Gpu3DAvgPercent + " |"
     $mdLines.Add($row)
 }
 
 $mdLines.Add("")
 $mdLines.Add("### 1.1 All Raw Trial Records")
 $mdLines.Add("")
-$mdLines.Add("| Trial ID | Condition | Status | Duration (s) | Target Layer | SF Start | SF End | Delta | Presented FPS | Distance (px) | Gfx Records | Latency Avg (ms) | P50 (ms) | P90 (ms) | Jank % | CPU % (Samples) | GPU 3D % (Samples, Matched) |")
-$mdLines.Add("| :--- | :--- | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
+$mdLines.Add("| Trial ID | Condition | Status | Duration (s) | Target Layer | SF Start | SF End | Delta | Presented FPS | Actual Dist (px) | Expected Dist (px) | Gfx Records | Latency Avg (ms) | P50 (ms) | P90 (ms) | Jank % | CPU % (Samples) | GPU 3D % (Samples, Matched) |")
+$mdLines.Add("| :--- | :--- | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
 
 foreach ($r in $allTrialResults) {
-    $rRow = "| " + $r.Condition + " (T" + $r.Trial + ") | " + $r.Label + " | " + $r.Status + " | " + $r.ActualDurationSec + "s | " + $r.SfLayerName + " | " + $r.SfStartFrames + " | " + $r.SfEndFrames + " | " + $r.SfDeltaFrames + " | " + $r.PresentedFps + " FPS | " + $r.ActualDistancePx + " px | " + $r.CapturedGfxRecords + " | " + $r.FrameLatencyAvgMs + " ms | " + $r.P50Ms + " ms | " + $r.P90Ms + " ms | " + $r.JankPercent + "% | " + $r.CpuAvgPercent + "% (" + $r.CpuSampleCount + ") | " + $r.Gpu3DAvgPercent + "% (" + $r.GpuSampleCount + ", " + $r.MatchedGpuInstances + ") |"
+    $rRow = "| " + $r.Condition + " (T" + $r.Trial + ") | " + $r.Label + " | " + $r.Status + " | " + $r.ActualDurationSec + "s | " + $r.SfLayerName + " | " + $r.SfStartFrames + " | " + $r.SfEndFrames + " | " + $r.SfDeltaFrames + " | " + $r.PresentedFps + " FPS | " + $r.ActualDistancePx + " px | " + $r.ExpectedDistancePx + " px | " + $r.CapturedGfxRecords + " | " + $r.FrameLatencyAvgMs + " ms | " + $r.P50Ms + " ms | " + $r.P90Ms + " ms | " + $r.JankPercent + "% | " + $r.CpuAvgPercent + "% (" + $r.CpuSampleCount + ") | " + $r.Gpu3DAvgPercent + "% (" + $r.GpuSampleCount + ", " + $r.MatchedGpuInstances + ") |"
     $mdLines.Add($rRow)
 }
 
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
-$mdLines.Add("## 2. [IMPLEMENTED] Benchmark Architecture & Correctness Guardrails")
-$mdLines.Add("- **Canonical In-App Workload Generator (`com.tabletdroid.benchmark`)**: Replaced non-deterministic `adb shell input swipe` with an internal Android `Choreographer`-driven smooth scrolling engine maintaining constant velocity (${VelocityPxSec} px/s) over a fixed set of 100 rich UI cards.")
-$mdLines.Add("- **Exact Target Layer Extraction**: SurfaceFlinger timestats specifically resolves the layer `com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#*`, eliminating non-target system layers and splash screen artifacts.")
-$mdLines.Add("- **Fail-Closed Verification Gates**: Every trial strictly validates Target App Installation, SurfaceFlinger Layer Discovery, Gfxinfo Framestats Availability, and Background Telemetry Sample Acquisition.")
-$mdLines.Add("- **Decoupled Out-of-Process Runspace Telemetry**: Telemetry worker runs in an independent PowerShell Runspace with in-memory thread synchronization, avoiding threadpool contention and capturing genuine Windows performance counters (`\\GPU Engine(*)\\Utilization Percentage`).")
+$mdLines.Add("## 2. [IMPLEMENTED] Fail-Closed Validation & Decoupled Measurement Protocol")
+$mdLines.Add("- **Workload Distance Gate**: ExpectedDistance = Velocity * Duration. Fails as `INVALID / WORKLOAD_DISTANCE_OUT_OF_RANGE` if distance error > 10%.")
+$mdLines.Add("- **In-App Lifecycle Gate**: Validates `status == COMPLETE`, `elapsedMeasureMs` within 10% tolerance, and `workloadVersion == 1.0.0`.")
+$mdLines.Add("- **Exact Target Layer Extraction**: SurfaceFlinger timestats resolves `com.tabletdroid.benchmark/...#<id>`, dynamically choosing highest active instance.")
+$mdLines.Add("- **Telemetry Decoupling Policy**: Production performance benchmarks run with Telemetry OFF to prevent host threadpool observer skew.")
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
-$mdLines.Add("## 3. [INFERENCE] Workload Reproducibility & Findings")
+$mdLines.Add("## 3. [INFERENCE] Findings & Conclusions")
 
 if ($Mode -eq "Canonical") {
     $c = ($conditionSummaries | Select-Object -First 1)
     if ($c) {
-        $mdLines.Add("### 3.1 Canonical Workload Evaluation")
+        $mdLines.Add("### 3.1 Canonical Workload Evaluation (Telemetry OFF)")
         $mdLines.Add("- **Presented FPS**: **$($c.PresentedFpsMedian) FPS** (StdDev: $($c.PresentedFpsStdDev), CV: $($c.PresentedFpsCVPercent)%)")
         $mdLines.Add("- **Workload Distance**: **$($c.ActualDistanceMedian) px** (CV: $($c.DistanceCVPercent)%)")
         $mdLines.Add("- **Frame Latency**: P50 = **$($c.P50MedianMs) ms**, P90 = **$($c.P90MedianMs) ms**, Jank = **$($c.JankMedianPercent)%**")
-        $mdLines.Add("- **Host Telemetry**: QEMU CPU Avg = **$($c.CpuAvgPercent)%**, RTX 3050 Ti GPU 3D Avg = **$($c.Gpu3DAvgPercent)%**")
         $mdLines.Add("")
-        $mdLines.Add("> **Finding**: The canonical benchmark workload achieves complete deterministic workload execution with exact target layer SurfaceFlinger tracking and valid gfxinfo framestats.")
-    }
-} elseif ($Mode -eq "ObserverEffectA_B") {
-    $cA = ($conditionSummaries | Where-Object { $_.Key -eq "CondA_NoTelemetry" } | Select-Object -First 1)
-    $cD = ($conditionSummaries | Where-Object { $_.Key -eq "CondD_BothCpuGpu" } | Select-Object -First 1)
-    if ($cA -and $cD) {
-        $deltaFps = [math]::Round($cD.PresentedFpsMedian - $cA.PresentedFpsMedian, 2)
-        $deltaDist = [math]::Round($cD.ActualDistanceMedian - $cA.ActualDistanceMedian, 2)
-        $mdLines.Add("### 3.1 Observer Effect Impact")
-        $mdLines.Add("- **Pure Workload (No Telemetry)**: Presented FPS = **$($cA.PresentedFpsMedian) FPS**, Distance = **$($cA.ActualDistanceMedian) px**")
-        $mdLines.Add("- **Full Telemetry (CPU + GPU)**: Presented FPS = **$($cD.PresentedFpsMedian) FPS**, Distance = **$($cD.ActualDistanceMedian) px**")
-        $mdLines.Add("- **Telemetry Impact Delta**: FPS Delta: **${deltaFps} FPS**, Distance Delta: **${deltaDist} px**")
-        $mdLines.Add("")
-        if ([math]::Abs($deltaFps) -lt 1.5) {
-            $mdLines.Add("> **Conclusion**: **no meaningful difference** in frame rate or workload execution from telemetry.")
+        if ($c.DistanceCVPercent -le 10.0) {
+            $mdLines.Add("> **Conclusion**: Workload determinism is strictly verified (Distance CV = $($c.DistanceCVPercent)% <= 10%).")
         } else {
-            $mdLines.Add("> **Conclusion**: **meaningful difference** detected with ${deltaFps} FPS delta.")
+            $mdLines.Add("> **Conclusion**: Workload cadence unstable (Distance CV = $($c.DistanceCVPercent)% > 10%).")
         }
     }
 } elseif ($Mode -eq "GpuRendererComparison") {
     $gl = ($conditionSummaries | Where-Object { $_.Key -eq "CondA_SkiaGL" } | Select-Object -First 1)
     $vk = ($conditionSummaries | Where-Object { $_.Key -eq "CondB_SkiaVK" } | Select-Object -First 1)
     if ($gl -and $vk) {
-        $deltaFps = [math]::Round($vk.PresentedFpsMedian - $gl.PresentedFpsMedian, 2)
-        $mdLines.Add("### 3.1 Skia OpenGL vs Skia Vulkan Evaluation")
-        $mdLines.Add("- **Skia OpenGL**: Presented FPS = **$($gl.PresentedFpsMedian) FPS**, P50 = **$($gl.P50MedianMs) ms**, GPU 3D = **$($gl.Gpu3DAvgPercent)%**")
-        $mdLines.Add("- **Skia Vulkan**: Presented FPS = **$($vk.PresentedFpsMedian) FPS**, P50 = **$($vk.P50MedianMs) ms**, GPU 3D = **$($vk.Gpu3DAvgPercent)%**")
-        $mdLines.Add("- **Observed Delta (Vulkan - OpenGL)**: FPS Delta: **${deltaFps} FPS**")
-        $mdLines.Add("")
-        if ($deltaFps -gt 3.0) {
-            $mdLines.Add("> **Finding**: **Vulkan better**")
-        } elseif ($deltaFps -lt -3.0) {
-            $mdLines.Add("> **Finding**: **OpenGL better**")
-        } elseif ([math]::Abs($deltaFps) -le 1.5) {
-            $mdLines.Add("> **Finding**: **no meaningful difference**")
+        $glValid = ($gl.ValidTrials -match "^5 / 5") -and ($gl.DistanceCVPercent -le 10.0)
+        $vkValid = ($vk.ValidTrials -match "^5 / 5") -and ($vk.DistanceCVPercent -le 10.0)
+        
+        $mdLines.Add("### 3.1 Skia OpenGL vs Skia Vulkan Evaluation (Telemetry OFF)")
+        $mdLines.Add("- **Skia OpenGL**: Presented FPS = **$($gl.PresentedFpsMedian) FPS**, Distance = **$($gl.ActualDistanceMedian) px** (CV: $($gl.DistanceCVPercent)%), P50 = **$($gl.P50MedianMs) ms**")
+        $mdLines.Add("- **Skia Vulkan**: Presented FPS = **$($vk.PresentedFpsMedian) FPS**, Distance = **$($vk.ActualDistanceMedian) px** (CV: $($vk.DistanceCVPercent)%), P50 = **$($vk.P50MedianMs) ms**")
+        
+        if ($glValid -and $vkValid) {
+            $deltaFps = [math]::Round($vk.PresentedFpsMedian - $gl.PresentedFpsMedian, 2)
+            $mdLines.Add("- **Observed Delta (Vulkan - OpenGL)**: FPS Delta: **${deltaFps} FPS**")
+            $mdLines.Add("")
+            if ($deltaFps -gt 3.0) {
+                $mdLines.Add("> **Finding**: **Vulkan better** (${deltaFps} FPS advantage with verified workload determinism).")
+            } elseif ($deltaFps -lt -3.0) {
+                $mdLines.Add("> **Finding**: **OpenGL better** (${deltaFps} FPS advantage with verified workload determinism).")
+            } else {
+                $mdLines.Add("> **Finding**: **no meaningful difference**")
+            }
         } else {
-            $mdLines.Add("> **Finding**: **inconclusive**")
+            $mdLines.Add("")
+            $mdLines.Add("> **Finding**: **INCONCLUSIVE** (Workload cadence validity failed or Distance CV > 10% in one of the conditions).")
         }
+    }
+} elseif ($Mode -eq "DiagnosticTelemetry") {
+    $c = ($conditionSummaries | Select-Object -First 1)
+    if ($c) {
+        $mdLines.Add("### 3.1 Host Telemetry Diagnostic Profile")
+        $mdLines.Add("- **QEMU CPU Avg**: **$($c.CpuAvgPercent)%**")
+        $mdLines.Add("- **RTX 3050 Ti GPU 3D Avg**: **$($c.Gpu3DAvgPercent)%**")
+        $mdLines.Add("- **Presented FPS with Telemetry**: **$($c.PresentedFpsMedian) FPS**")
     }
 }
 
 $mdLines.Add("")
 $mdLines.Add("---")
 $mdLines.Add("")
-$mdLines.Add("## 4. [OPEN] Residual Architectural Hypotheses")
-$mdLines.Add("1. **ASG Transport Throughput & Ring Buffer Protocol [OPEN / HYPOTHESIS]**: Host-guest transport protocol remains an open hypothesis pending direct empirical profiling.")
-$mdLines.Add("2. **Host Compositor / ANGLE / D3D11 Texture Pipeline**: Host-side presentation overhead.")
-$mdLines.Add("")
-$mdLines.Add("---")
-$mdLines.Add("")
-$mdLines.Add("## 5. [DECISION] Next Phase Execution")
-$mdLines.Add("- All future TabletDroid v0.1 performance characterization and A/B experiments are officially standardized on `com.tabletdroid.benchmark`.")
+$mdLines.Add("## 4. [DECISION] Next Phase Execution")
+$mdLines.Add("- All architectural decisions require passing all 8 validation gates.")
 $mdLines.Add("- Proceed to ASG and host compositor transport analysis with verified deterministic probe.")
 
 [System.IO.File]::WriteAllLines($reportFile, $mdLines, [System.Text.Encoding]::UTF8)

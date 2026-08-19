@@ -41,30 +41,43 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
 
             if (lastFrameNanos > 0) {
                 double dt = (frameTimeNanos - lastFrameNanos) / 1_000_000_000.0;
-                // Clamp dt to avoid huge jumps on frame drops (e.g. max 0.1s)
-                if (dt > 0.1) dt = 0.1;
-
-                double deltaY = BenchmarkState.requestedVelocityPxPerSec * dt * scrollDirection;
+                double deltaY = BenchmarkState.requestedVelocityPxPerSec * dt;
                 accumulatedSubPixelY += deltaY;
 
                 int intDelta = (int) accumulatedSubPixelY;
-                if (intDelta != 0) {
+                if (intDelta > 0) {
                     accumulatedSubPixelY -= intDelta;
 
-                    int oldScrollY = scrollView.getScrollY();
-                    scrollView.scrollBy(0, intDelta);
-                    int actualMoved = scrollView.getScrollY() - oldScrollY;
+                    int maxScroll = Math.max(0, cardsContainer.getHeight() - scrollView.getHeight());
+                    if (maxScroll > 0) {
+                        int currentY = scrollView.getScrollY();
+                        int targetY = currentY + (intDelta * scrollDirection);
+                        int moved = 0;
 
-                    // Boundary checks
-                    int maxScroll = cardsContainer.getHeight() - scrollView.getHeight();
-                    if (scrollView.getScrollY() >= maxScroll && scrollDirection > 0) {
-                        scrollDirection = -1;
-                    } else if (scrollView.getScrollY() <= 0 && scrollDirection < 0) {
-                        scrollDirection = 1;
-                    }
+                        if (targetY >= maxScroll) {
+                            int toEdge = Math.max(0, maxScroll - currentY);
+                            moved += toEdge;
+                            int remainder = targetY - maxScroll;
+                            scrollDirection = -1;
+                            int back = Math.min(remainder, maxScroll);
+                            moved += back;
+                            scrollView.scrollTo(0, maxScroll - back);
+                        } else if (targetY <= 0) {
+                            int toEdge = Math.max(0, currentY);
+                            moved += toEdge;
+                            int remainder = -targetY;
+                            scrollDirection = 1;
+                            int fwd = Math.min(remainder, maxScroll);
+                            moved += fwd;
+                            scrollView.scrollTo(0, fwd);
+                        } else {
+                            scrollView.scrollTo(0, targetY);
+                            moved = Math.abs(targetY - currentY);
+                        }
 
-                    if (BenchmarkState.currentStatus == BenchmarkState.Status.RUNNING) {
-                        BenchmarkState.actualScrollDistancePx += Math.abs(actualMoved);
+                        if (BenchmarkState.currentStatus == BenchmarkState.Status.RUNNING) {
+                            BenchmarkState.actualScrollDistancePx += moved;
+                        }
                     }
                 }
 

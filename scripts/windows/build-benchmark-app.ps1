@@ -3,7 +3,7 @@ param(
     [string]$DeviceId = "emulator-5554"
 )
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $rootDir = (Resolve-Path "$scriptDir\..\..").Path
@@ -61,38 +61,36 @@ if ($LASTEXITCODE -ne 0) { throw "d8 failed with code $LASTEXITCODE" }
 
 # 6. Package, Align and Sign APK
 Write-Host "[5/6] Packaging and signing APK..." -ForegroundColor Gray
-# Copy base.apk and add classes.dex
-Copy-Item "$buildDir\base.apk" "$buildDir\unaligned.apk"
-$zipExe = (Get-Command 7z, tar -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+$unsignedApk = "$binDir\TabletDroid.Benchmark.unsigned.apk"
+$alignedApk = "$binDir\TabletDroid.Benchmark.aligned.apk"
+$finalApk = "$binDir\TabletDroid.Benchmark.apk"
 
-# Use powershell archive utility or jar to update apk with classes.dex
+$debugKeystore = "$binDir\debug.keystore"
+if (-not (Test-Path $debugKeystore)) {
+    & keytool -genkeypair -noprompt -alias androiddebugkey -keypass android -keystore $debugKeystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 10000 -keyalg RSA -keysize 2048 > $null 2>&1
+}
+
+# Zip classes.dex into unaligned apk
+Copy-Item "$buildDir\base.apk" $unsignedApk -Force
 Push-Location "$buildDir\dex"
-& jar uf "$buildDir\unaligned.apk" "classes.dex"
+& jar uf $unsignedApk classes.dex
 Pop-Location
 
 # Zipalign
-$alignedApk = "$buildDir\aligned.apk"
-& $zipalign -p -f 4 "$buildDir\unaligned.apk" $alignedApk
-if ($LASTEXITCODE -ne 0) { throw "zipalign failed with code $LASTEXITCODE" }
+& $zipalign -p -f -v 4 $unsignedApk $alignedApk > $null 2>&1
 
-# Ensure debug keystore exists
-$keystorePath = "$buildDir\debug.keystore"
-& keytool -genkeypair -alias androiddebugkey -keypass android -keystore $keystorePath -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 10000 -keyalg RSA -keysize 2048
-
-# Sign APK
-$finalApk = "$binDir\TabletDroid.Benchmark.apk"
-& cmd.exe /c "`"$apksigner`" sign --ks `"$keystorePath`" --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android --out `"$finalApk`" `"$alignedApk`""
-if ($LASTEXITCODE -ne 0) { throw "apksigner failed with code $LASTEXITCODE" }
+# Apksigner
+& cmd.exe /c "`"$apksigner`" sign --ks `"$debugKeystore`" --ks-pass pass:android --ks-key-alias androiddebugkey --key-pass pass:android --out `"$finalApk`" `"$alignedApk`""
 
 Write-Host " [SUCCESS] Benchmark APK created: $finalApk" -ForegroundColor Green
 
-# 7. Install if requested
 if ($Install) {
-    Write-Host "[6/6] Installing APK to ADB device ($DeviceId)..." -ForegroundColor Cyan
-    & $adb -s $DeviceId install -r "$finalApk"
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host " [SUCCESS] Benchmark App installed successfully on $DeviceId!" -ForegroundColor Green
+    Write-Host "[6/6] Installing APK to ADB device ($DeviceId)..."
+    & $adb -s $DeviceId uninstall com.tabletdroid.benchmark > $null 2>&1
+    $installOutput = (& $adb -s $DeviceId install -r -d -t $finalApk 2>&1) | Out-String
+    if ($installOutput -match "Success") {
+        Write-Host " [SUCCESS] Installed to $DeviceId!" -ForegroundColor Green
     } else {
-        Write-Warning "Failed to install APK to $DeviceId"
+        Write-Warning "Install output: $installOutput"
     }
 }

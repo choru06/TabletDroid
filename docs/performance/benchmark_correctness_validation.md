@@ -1,6 +1,6 @@
 # TabletDroid v0.1 Benchmark Correctness & Canonical Workload Validation Report
 
-- **Timestamp**: 2026-08-20 04:16:00
+- **Timestamp**: 2026-08-20 04:31:00
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **Host Operating System**: Windows 11 Home 23H2
 - **Hypervisor**: Windows Hypervisor Platform (WHPX) Acceleration Active
@@ -10,81 +10,79 @@
 
 ---
 
-## 1. [IMPLEMENTED] Canonical Workload Architecture & Correctness Guardrails
+## 1. [IMPLEMENTED] Canonical Workload Architecture & Fail-Closed Validity Gates
 
 ### 1.1 In-Guest Deterministic Benchmark Application (`TabletDroid.Benchmark`)
-- **Package**: `com.tabletdroid.benchmark`
+- **Package**: `com.tabletdroid.benchmark` (`BenchmarkActivity`)
 - **Location**: `android/guest/TabletDroid.Benchmark/`
 - **Workload Structure**: 100 fixed structured UI cards featuring rounded card backgrounds, elevation shadows, gradient hero banners, colored oval avatars, category chips, and multi-line typography.
-- **Zero-External Dependencies & Determinism**:
-  - No network connectivity or external HTTP requests.
-  - Zero randomized data generation; deterministic color and card sequence.
-  - No user-input dependency or `adb shell input swipe` commands.
-- **In-App Auto-Scroll Motion Engine**:
-  - Driven by Android `Choreographer.FrameCallback` for sub-pixel smooth scrolling at a strictly controlled velocity ($800\text{ px/s}$).
-  - Automatic direction inversion at scroll boundaries.
-- **Broadcast Protocol Interface**:
-  - `com.tabletdroid.benchmark.ACTION_START`: Accepts `--ei warmup_sec`, `--ei measure_sec`, `--ef velocity_px_s`.
-  - `com.tabletdroid.benchmark.ACTION_RESET`: Resets scroll offset, timing accumulators, and distance metrics.
-  - Emits JSON structured status to Logcat (`BENCHMARK_STATUS_JSON`) containing actual scroll distance, elapsed measurement milliseconds, and frame counts.
+- **Strict Determinism**: Zero network calls, zero randomized data structures, and zero external asset dependencies.
+- **In-App Auto-Scroll Motion Engine**: Driven by Android `Choreographer.FrameCallback` executing sub-pixel smooth scrolling at constant velocity ($800\text{ px/s}$) with exact boundary reflection math, ensuring total distance moved is strictly $V \times T$ regardless of frame rate.
+- **Broadcast Protocol Interface**: `ACTION_START` (with `--ei warmup_sec`, `--ei measure_sec`, `--ef velocity_px_s`), `ACTION_RESET`, and `BENCHMARK_STATUS_JSON` emission to Logcat.
 
-### 1.2 Fail-Closed Automated Harness (`scripts/windows/benchmark-spike.ps1`)
-- **No-Fallback Policy**: If `com.tabletdroid.benchmark` is not verified on the target device, the harness fails immediately (`FAIL FAST`). Automatic fallback to Chrome or Settings is completely eliminated.
-- **Exact Target Layer Resolution**: SurfaceFlinger timestats dumps are parsed specifically for `com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#<id>`, dynamically resolving the latest active layer ID and ignoring dead historical layers and splash screens.
-- **Decoupled Out-of-Process Runspace Telemetry**: CPU and Windows Performance Counter GPU metrics (`\GPU Engine(*)\Utilization Percentage`) are sampled asynchronously in a dedicated PowerShell Runspace using synchronized memory buffers.
+### 1.2 8-Point Fail-Closed Validation Matrix
+Every trial and experimental series must satisfy all 8 validity gates; any breach flags the trial as `INVALID` or the series as `INCONCLUSIVE`:
+
+| Gate # | Validation Gate | Rule / Condition | Status |
+| :---: | :--- | :--- | :---: |
+| **G1** | **Target App Verification** | `pm path com.tabletdroid.benchmark` verified (No fallback) | **PASS** |
+| **G2** | **Workload Version** | `workloadVersion == "1.0.0"` in Logcat status | **PASS** |
+| **G3** | **Workload Lifecycle State**| In-app status == `COMPLETE` | **PASS** |
+| **G4** | **Measurement Duration** | `elapsedMeasureMs` within $\pm 10\%$ of requested time | **PASS** |
+| **G5** | **Distance Error Gate** | $\vert \text{ActualDistance} - \text{ExpectedDistance} \vert / \text{ExpectedDistance} \le 10\%$ | **PASS** |
+| **G6** | **Target SF Active Layer** | SurfaceFlinger resolves latest active `#<id>` layer | **PASS** |
+| **G7** | **Gfxinfo Framestats** | `dumpsys gfxinfo framestats` records $> 0$ | **PASS** |
+| **G8** | **5-Trial Distance CV** | Workload distance coefficient of variation $< 10\%$ | **PASS** |
+
+### 1.3 Telemetry Observer Decoupling Policy
+- **Primary Performance Runs**: Executed with Telemetry OFF (`enableCpu=$false`, `enableGpu=$false`) to completely prevent host threadpool and performance counter polling observer skew.
+- **Diagnostic Runs**: Executed separately with Telemetry ON solely to inspect CPU/GPU resource allocation patterns.
 
 ---
 
 ## 2. [MEASURED] Empirical Characterization Matrix
 
-### 2.1 Canonical 5-Trial Baseline (30-second Measurement Phase)
-| Metric | Median | Min | Max | StdDev | CV (%) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **SurfaceFlinger Presented FPS** | **15.43 FPS** | 14.39 | 16.66 | 0.85 | **5.5%** |
-| **Actual Scroll Distance** | **23,147 px** | 23,000 | 23,573 | 215 px | **0.9%** |
-| **HWUI P50 Frame Latency** | **174.32 ms** | 108.11 | 180.64 | - | - |
-| **HWUI P90 Frame Latency** | **253.59 ms** | 187.40 | 306.59 | - | - |
-| **Host QEMU CPU Load** | **16.7%** | 16.5% | 17.3% | - | - |
-| **Host RTX 3050 Ti GPU 3D Load**| **3.5%** | 2.5% | 4.1% | - | - |
+### 2.1 Canonical 5-Trial Baseline (Telemetry OFF, 30s Measurement Phase)
+- **Report Document**: [`docs/performance/canonical_benchmark_workload.md`](canonical_benchmark_workload.md)
 
-> **Validation Outcome**: The canonical workload demonstrated exceptional determinism with a scroll distance coefficient of variation (CV) of **0.9%** and a presentation FPS CV of **5.5%**.
+| Metric | Median | Min | Max | StdDev | CV (%) | Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **SurfaceFlinger Presented FPS** | **12.46 FPS** | 11.57 | 14.23 | 0.94 | **7.3%** | **PASS** |
+| **Actual Scroll Distance** | **24,200 px** | 24,186 | 24,413 | 97 px | **0.4%** | **PASS (0.4% CV)** |
+| **HWUI P50 Frame Latency** | **166.43 ms** | 131.23 | 212.90 | - | - | **PASS** |
+| **HWUI P90 Frame Latency** | **353.56 ms** | 159.55 | 808.20 | - | - | **PASS** |
+| **Workload Validity Gates** | **5 / 5 Trials Valid** | - | - | - | - | **PASS** |
 
-### 2.2 Telemetry Observer Effect Evaluation (4 Conditions x 5 Trials)
-| Condition | Median Presented FPS | FPS CV% | Actual Distance | Distance CV% | P50 Latency (ms) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **A. No Telemetry (Pure Workload)** | **23.67 FPS** | 19.5% | 8,000 px | 1.7% | 98.48 ms |
-| **B. CPU Telemetry Only** | **7.69 FPS** | 8.0% | 5,187 px | 9.5% | 383.17 ms |
-| **C. GPU Telemetry Only** | **5.19 FPS** | 1.6% | 3,440 px | 3.0% | 483.69 ms |
-| **D. CPU + GPU Telemetry** | **18.59 FPS** | 14.3% | 7,933 px | 5.2% | 162.13 ms |
+### 2.2 Corrected GPU HWUI Renderer Comparison (Telemetry OFF, 5 Trials Each)
+- **Report Document**: [`docs/performance/gpu_backend_comparison.md`](gpu_backend_comparison.md)
 
-> **Validation Outcome**: Heavy continuous synchronous Windows counter polling introduces noticeable host CPU/GPU contention. Telemetry sampling in production benchmarks is now decoupled into low-frequency asynchronous background intervals.
+> [!NOTE]
+> **CORRECTION / SUPERSEDED RECORD**: The initial OpenGL vs Vulkan benchmark in commit `1ed463f` had distance cadence drift in OpenGL (CV: 43.5%). That initial comparison has been invalidated and replaced by this strictly gated evaluation.
 
-### 2.3 GPU HWUI Renderer Comparison (Skia OpenGL vs Skia Vulkan)
-| HWUI Backend | Median Presented FPS | Min | Max | Distance (px) | P50 Latency (ms) |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Skia OpenGL (`skiagl`)** | **5.89 FPS** | 4.20 | 18.86 | 3,746 px | 487.98 ms |
-| **Skia Vulkan (`skiavk`)** | **17.39 FPS** | 15.78 | 18.49 | 7,933 px | 170.95 ms |
+| HWUI Backend | Valid Trials | Median Presented FPS | FPS Range | Actual Distance | Distance CV% | P50 Latency | Gate Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Skia OpenGL (`skiagl`)** | **5 / 5** | **11.70 FPS** | [8.29, 16.98] | **8,133 px** | **0.9%** | 211.25 ms | **PASS** |
+| **Skia Vulkan (`skiavk`)** | **5 / 5** | **10.00 FPS** | [6.89, 12.48] | **8,134 px** | **0.6%** | 238.61 ms | **PASS** |
+| **Delta (Vulkan - OpenGL)** | - | **-1.70 FPS** | - | **+1 px** | - | **+27.36 ms** | **no meaningful difference** |
 
-> **Validation Outcome**: Under the canonical deterministic workload, **Skia Vulkan outperforms Skia OpenGL by +11.5 FPS** (17.39 vs 5.89 FPS), cutting P50 frame latency from 487.98 ms down to 170.95 ms.
+> **Validation Outcome**: When both backends execute with verified deterministic distance ($8,133\text{ px}$ vs $8,134\text{ px}$, $\text{CV} < 1\%$), there is **no meaningful difference** ($\le 1.7\text{ FPS}$) between Skia OpenGL and Skia Vulkan. Neither guest graphics API backend is the root cause of the ~12-15 FPS limit.
+
+### 2.3 Diagnostic Telemetry Profile (Reference Only)
+- **QEMU Host CPU Load**: ~17.7%
+- **RTX 3050 Ti Host GPU 3D Load**: ~4.5%
 
 ---
 
-## 3. [DECISION] Architectural & Benchmarking Standards
+## 3. [DECISION] Architectural Decisions
 
-1. **Standardization of Benchmark Probe**:
-   - `com.tabletdroid.benchmark/.BenchmarkActivity` is formally designated as the single canonical workload for all TabletDroid v0.1 rendering and transport investigations.
-   - All historical benchmarks based on external apps (`com.instagram.android`, Google Chrome, Android Settings) are archived as non-canonical.
-2. **Standardization of Fail-Closed Protocol**:
-   - Any trial failing package verification, target layer discovery, gfxinfo acquisition, or distance cadence limits ($\pm 10\%$) is strictly discarded as `INVALID`.
-3. **Default HWUI Backend**:
-   - Skia Vulkan (`debug.hwui.renderer=skiavk`) is confirmed as the standard guest rendering backend for Android 14 AVD environments.
+1. **Standardization of Benchmark Probe**: `com.tabletdroid.benchmark/.BenchmarkActivity` is the single canonical probe.
+2. **Measurement Separation**: Telemetry OFF is the mandatory standard for all performance headline numbers; Telemetry ON is reserved for diagnostic isolation.
+3. **HWUI Neutrality**: HWUI backend selection (OpenGL vs Vulkan) does not resolve the bottleneck. The default remains Skia Vulkan (`debug.hwui.renderer=skiavk`).
+4. **ASG Readiness**: All 8 validation gates are verified and passing. The measurement framework is locked. Proceed directly to **ASG Transport & Host Compositor A/B experiments**.
 
 ---
 
 ## 4. [OPEN] Residual Architectural Hypotheses
 
-1. **ASG (Address Space Graphics) Transport Ring Buffer Bottleneck [OPEN / HYPOTHESIS]**:
-   - The host GPU 3D utilization remains low ($< 5\%$) even when guest UI frame latency exceeds 100 ms.
-   - Hypothesis: The virtualized PCI transport / shared memory command ring buffer between guest libOpenglRender and host emulator processes throttles command throughput.
-2. **Host Presentation & Window Embedding Pipeline [OPEN / HYPOTHESIS]**:
-   - Direct DXGI shared texture presentation path vs Win32 SetParent hosting.
+1. **ASG Transport Ring Buffer Protocol**: Host-guest PCI/IPC command serialization bottlenecks.
+2. **Host Presenter Pipeline**: D3D11 / ANGLE swapchain copy overhead in host window presentation.
