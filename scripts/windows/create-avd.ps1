@@ -43,7 +43,7 @@ if (-not (Test-Path $avdManager)) {
     exit 1
 }
 
-# 기본 태블릿 AVD 생성 명령 (device 옵션 없이 시스템 이미지 기반 생성 후 config.ini 커스터마이징)
+# 기본 태블릿 AVD 생성 명령 (시스템 이미지 기반 생성 후 config.ini 커스터마이징)
 Write-Host "Running avdmanager create avd..." -ForegroundColor Gray
 cmd.exe /c "echo no | `"$avdManager`" create avd -n `"$AvdName`" -k `"$imagePackage`" --force"
 

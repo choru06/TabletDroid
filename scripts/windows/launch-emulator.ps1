@@ -1,7 +1,9 @@
 param(
-    [string]$AvdName = "TabletDroid_Z13",
-    [switch]$NoSkin = $true,
-    [switch]$NoWindow = $false
+    [string]$AvdName = "TabletDroid_Z13_Play",
+    [switch]$NoSkin = $false,
+    [switch]$NoWindow = $false,
+    [switch]$WipeData = $false,
+    [string]$Skin = "1920x1200"
 )
 
 $emulatorPath = (Get-Command emulator -ErrorAction SilentlyContinue).Source
@@ -19,8 +21,19 @@ $argsList = @(
     "-accel", "on",
     "-gpu", "host",
     "-no-boot-anim",
-    "-no-snapshot-save"
+    "-no-snapshot-load",
+    "-no-snapshot-save",
+    "-no-metrics",
+    "-crash-report-mode", "disabled"
 )
+
+if ($WipeData) {
+    $argsList += "-wipe-data"
+}
+
+if ($Skin) {
+    $argsList += "-skin", $Skin
+}
 
 if ($NoSkin) {
     $argsList += "-no-skin"
