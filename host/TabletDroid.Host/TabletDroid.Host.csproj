@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TabletDroid.Core\TabletDroid.Core.csproj" />
+    <ProjectReference Include="..\TabletDroid.Runtime\TabletDroid.Runtime.csproj" />
+    <ProjectReference Include="..\TabletDroid.Bridge\TabletDroid.Bridge.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

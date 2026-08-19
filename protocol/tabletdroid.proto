@@ -1,0 +1,151 @@
+syntax = "proto3";
+
+package tabletdroid.protocol;
+
+option csharp_namespace = "TabletDroid.Protocol";
+option java_package = "com.tabletdroid.guestagent.protocol";
+option java_outer_classname = "TabletDroidProto";
+
+// Host ↔ Guest 최상위 메시지 래퍼
+message TabletDroidMessage {
+  string message_id = 1;
+  int64 timestamp = 2;
+
+  oneof payload {
+    // 헬스체크 및 세션
+    Ping ping = 10;
+    Pong pong = 11;
+    HandshakeRequest handshake_request = 12;
+    HandshakeResponse handshake_response = 13;
+
+    // 클립보드 동기화
+    ClipboardSyncEvent clipboard_sync = 20;
+
+    // 화면 방향 및 디스플레이 제어
+    SetOrientationRequest set_orientation = 30;
+    OrientationChangedEvent orientation_changed = 31;
+    SetDisplayDensityRequest set_display_density = 32;
+
+    // 앱 라이프사이클 및 실행
+    LaunchAppRequest launch_app = 40;
+    LaunchAppResponse launch_app_response = 41;
+    AppLifecycleEvent app_lifecycle = 42;
+    ListInstalledAppsRequest list_apps_request = 43;
+    ListInstalledAppsResponse list_apps_response = 44;
+
+    // 시스템 UI 제어
+    SetImmersiveModeRequest set_immersive = 50;
+  }
+}
+
+// -------------------------------------------------------------
+// 헬스체크 및 핸드셰이크
+// -------------------------------------------------------------
+message Ping {
+  int64 seq = 1;
+}
+
+message Pong {
+  int64 seq = 1;
+}
+
+message HandshakeRequest {
+  string host_version = 1;
+  string os_version = 2;
+}
+
+message HandshakeResponse {
+  string guest_version = 1;
+  int32 android_api_level = 2;
+  bool is_privileged = 3;
+}
+
+// -------------------------------------------------------------
+// 클립보드 동기화 (루프 방지 메커니즘 포함)
+// -------------------------------------------------------------
+enum ClipboardSource {
+  SOURCE_UNKNOWN = 0;
+  SOURCE_WINDOWS = 1;
+  SOURCE_ANDROID = 2;
+}
+
+message ClipboardSyncEvent {
+  int64 revision_id = 1;
+  ClipboardSource source = 2;
+  string content_hash = 3; // SHA-256
+  string text_content = 4;
+}
+
+// -------------------------------------------------------------
+// 디스플레이 및 화면 방향 제어
+// -------------------------------------------------------------
+enum DeviceOrientation {
+  ORIENTATION_NATURAL = 0;   // 0도 (보통 가로 1920x1200)
+  ORIENTATION_RIGHT_90 = 1;  // 90도 시계방향
+  ORIENTATION_INVERTED_180 = 2; // 180도
+  ORIENTATION_LEFT_270 = 3;  // 270도
+}
+
+message SetOrientationRequest {
+  DeviceOrientation orientation = 1;
+  bool lock_orientation = 2;
+}
+
+message OrientationChangedEvent {
+  DeviceOrientation current_orientation = 1;
+}
+
+message SetDisplayDensityRequest {
+  int32 dpi = 1; // e.g. 240, 280, 320
+}
+
+// -------------------------------------------------------------
+// 앱 라이프사이클 제어
+// -------------------------------------------------------------
+message LaunchAppRequest {
+  string package_name = 1;
+  string activity_name = 2;
+  bool force_stop_first = 3;
+}
+
+message LaunchAppResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+enum AppState {
+  STATE_UNKNOWN = 0;
+  STATE_RESUMED = 1;
+  STATE_PAUSED = 2;
+  STATE_STOPPED = 3;
+  STATE_DESTROYED = 4;
+}
+
+message AppLifecycleEvent {
+  string package_name = 1;
+  AppState state = 2;
+}
+
+message ListInstalledAppsRequest {
+  bool include_system_apps = 1;
+}
+
+message AppInfo {
+  string package_name = 1;
+  string label = 2;
+  string launch_activity = 3;
+  bytes icon_png_bytes = 4;
+}
+
+message ListInstalledAppsResponse {
+  repeated AppInfo apps = 1;
+}
+
+// -------------------------------------------------------------
+// 시스템 UI 제어
+// -------------------------------------------------------------
+message SetImmersiveModeRequest {
+  bool hide_status_bar = 1;
+  bool hide_navigation_bar = 2;
+  bool sticky = 3;
+}

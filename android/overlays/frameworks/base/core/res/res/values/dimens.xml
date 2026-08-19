@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TabletDroid Clean Fullscreen Resource Overlay -->
+<resources>
+    <!-- 상태바 높이 0으로 설정 -->
+    <dimen name="status_bar_height">0dp</dimen>
+    <dimen name="status_bar_height_portrait">0dp</dimen>
+    <dimen name="status_bar_height_landscape">0dp</dimen>
+
+    <!-- 네비게이션바 크기 0으로 설정 -->
+    <dimen name="navigation_bar_height">0dp</dimen>
+    <dimen name="navigation_bar_height_landscape">0dp</dimen>
+    <dimen name="navigation_bar_width">0dp</dimen>
+
+    <!-- 빠른 설정 및 시스템 제스처 인셋 무효화 -->
+    <dimen name="system_gestures_start_inset">0dp</dimen>
+</resources>

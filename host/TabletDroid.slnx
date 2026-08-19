@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="TabletDroid.Bridge/TabletDroid.Bridge.csproj" />
+  <Project Path="TabletDroid.Core/TabletDroid.Core.csproj" />
+  <Project Path="TabletDroid.Host/TabletDroid.Host.csproj" />
+  <Project Path="TabletDroid.Runtime/TabletDroid.Runtime.csproj" />
+  <Project Path="TabletDroid.Tests/TabletDroid.Tests.csproj" />
+</Solution>

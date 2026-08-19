@@ -1,0 +1,29 @@
+## .NET / C#
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.vscode/
+
+## Android / Gradle
+.gradle/
+build/
+*.iml
+local.properties
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+## OS Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+## Logs
+*.log
