@@ -1,45 +1,46 @@
-# TabletDroid v0.1 Performance Baseline Protocol & Analysis
+﻿# TabletDroid v0.1 Performance Baseline Benchmark
 
-- **Target Device**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, Windows 11)
-- **Target App**: Instagram (`com.instagram.android`)
-- **Benchmark Suite**: [`scripts/windows/benchmark-spike.ps1`](../../scripts/windows/benchmark-spike.ps1)
-- **Status**: Framework Ready for Physical Execution
-
----
-
-## 1. Benchmark Execution Methodology
-
-The benchmark measures real frame timings from Android's `dumpsys gfxinfo framestats` and `SurfaceFlinger`:
-
-1. **Cold Launch Time**: `am start -W -S` measuring `TotalTime` in ms.
-2. **Scroll Gesture Stress Test**: 8-second automated swipe gestures generating continuous frame load.
-3. **Per-Frame Timing Metrics**:
-   - Total Frame Time: `(FrameCompleted - IntendedVsync) / 1,000,000.0` ms.
-   - **Average FPS**: `1000.0 / AvgFrameTime`.
-   - **P50 / P90 / P99 Frame Time**: 50th, 90th, 99th percentile frame completion latencies.
-   - **Jank Rate (%)**: Percentage of frames exceeding the 16.67ms (60fps) threshold.
-   - **QEMU Process Memory**: Host RAM consumption.
+- **Timestamp**: 2026-08-20 00:02:17
+- **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, RTX 3050 Ti Laptop GPU, 16GB RAM)
+- **WHPX Accelerator**: Active & Operational
+- **Target App**: com.instagram.android
+- **Emulator Serial**: emulator-5554
 
 ---
 
-## 2. A/B Isolation Hypotheses
+## 1. Frame Metrics Summary
 
-### Hypothesis A: ART JIT Compiler Thrashing
-* **Test**: Baseline (Default JIT) vs. `cmd package compile -m speed -f com.instagram.android` (Full AOT).
-* **Criteria**: If FPS increases by >10 FPS, ART JIT overhead was a key factor. If flat, bottleneck is in the rendering pipeline.
-
-### Hypothesis B: Framebuffer Pixel Transport Bandwidth
-* **Test**: Resolution scaling across `1920x1200` (2.3M px) ➔ `1600x1000` (1.6M px) ➔ `1280x800` (1.0M px).
-* **Criteria**:
-  - If FPS scales proportionally (e.g. 20 ➔ 35 ➔ 55 FPS), **framebuffer IPC transport / pixel fill rate** is the bottleneck.
-  - If FPS remains flat (e.g. 20 ➔ 22 ➔ 23 FPS), **VM thread scheduling, SurfaceFlinger pacing, or guest app logic** is the bottleneck.
+| Test Scenario | Avg FPS | Avg FrameTime | P50 (ms) | P90 (ms) | P99 (ms) | Jank Rate (%) | Samples | QEMU RAM |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **ART Baseline (JIT)** | **10** | 99.65 ms | 64.47 ms | 302.46 ms | 485.56 ms | 100% | 56 | 4590.1 MB |
+| **ART AOT (speed filter)** | **6.9** | 144 ms | 116.69 ms | 284.23 ms | 464.47 ms | 100% | 39 | 5065.2 MB |
+| **Res 1920x1200 (2.30M (100%))** | **8.9** | 112.61 ms | 102.03 ms | 186.18 ms | 316.45 ms | 100% | 117 | 5210.9 MB |
+| **Res 1600x1000 (1.60M (70%))** | **12.2** | 82.25 ms | 75.25 ms | 111.75 ms | 251.11 ms | 100% | 120 | 5400.7 MB |
+| **Res 1280x800 (1.02M (44%))** | **40.2** | 24.9 ms | 18.89 ms | 49 ms | 69.88 ms | 81.6% | 103 | 5446.1 MB |
 
 ---
 
-## 3. How to Run
+## 2. A/B Bottleneck Isolation Analysis
 
-While the emulator is running with Instagram installed:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\windows\benchmark-spike.ps1
-```
-This will automatically execute the test matrix and overwrite this document with the real live metrics.
+### 2.1 ART Compilation Impact (JIT vs AOT speed filter)
+- **Launch Time Before AOT**: 2776 ms
+- **Launch Time After AOT**: 3928 ms (Delta: 1152 ms)
+- **Scroll Avg FPS (Before)**: 10 FPS
+- **Scroll Avg FPS (After)**: 6.9 FPS (Delta: -3.1 FPS)
+
+> **Interpretation**:
+> ART compilation improved launch time, but framerate during active scrolling remained relatively flat (Delta: +-3.1 FPS). This indicates the bottleneck is primarily in the Graphics/Surface rendering and IPC composition pipeline.
+
+### 2.2 Resolution Scaling Impact
+- **1920x1200**: 8.9 FPS
+- **1600x1000**: 12.2 FPS
+- **1280x800**: 40.2 FPS
+
+> **Interpretation**:
+> Framerate scaled dramatically when lowering resolution (8.9 -> 40.2 FPS). This is strong evidence that **pixel throughput / framebuffer IPC transfer** is the primary bottleneck.
+
+---
+
+## 3. Recommended Architectural Decision for v0.1
+- Reference Ticket: `perf: establish v0.1 rendering baseline and isolate frame bottleneck`
+- Next Step: `research: validate external GPU surface path for TabletDroid Host`

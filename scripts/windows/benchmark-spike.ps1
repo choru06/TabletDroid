@@ -1,7 +1,7 @@
 param(
     [string]$DeviceSerial = "emulator-5554",
     [string]$PackageName = "com.instagram.android",
-    [string]$ActivityName = "com.instagram.mainactivity.MainActivity",
+    [string]$ActivityName = "com.instagram.android/.activity.MainTabActivity",
     [int]$ScrollDurationSeconds = 8,
     [switch]$SkipArtBenchmark,
     [switch]$SkipResolutionBenchmark,
@@ -34,7 +34,7 @@ Write-Host " ADB Device    : $DeviceSerial" -ForegroundColor Cyan
 Write-Host "========================================================`n" -ForegroundColor Cyan
 
 $devices = & $adb devices
-if ($devices -notmatch $DeviceSerial) {
+if (-not ($devices -match $DeviceSerial)) {
     Write-Host "[ERROR] Device '$DeviceSerial' not connected. Please start emulator first via .\launch.bat" -ForegroundColor Red
     exit 1
 }
@@ -49,8 +49,8 @@ if (-not $appPath -or $appPath -notmatch "package:") {
 function Measure-AppLaunchTime {
     param([string]$pkg, [string]$act)
     & $adb -s $DeviceSerial shell am force-stop $pkg 2>$null
-    Start-Sleep -Milliseconds 500
-    $output = & $adb -s $DeviceSerial shell am start -W -S -n "$pkg/$act" 2>$null
+    $component = if ($act -match "/") { $act } else { "$pkg/$act" }
+    $output = & $adb -s $DeviceSerial shell am start -W -S -n "$component" 2>$null
     $totalTimeMs = 0
     foreach ($line in $output) {
         if ($line -match "TotalTime:\s*(\d+)") {
@@ -73,11 +73,22 @@ function Measure-Framestats {
     & $adb -s $DeviceSerial shell dumpsys gfxinfo $pkg reset > $null
     & $adb -s $DeviceSerial shell dumpsys SurfaceFlinger --timestats -clear > $null
 
+    # 화면 해상도 기반 동적 제스처 좌표 계산
+    $wmText = (& $adb -s $DeviceSerial shell wm size 2>$null) -join " "
+    $curW = 1200; $curH = 1920
+    if ($wmText -match "(\d+)x(\d+)") {
+        $curW = [int]$matches[1]
+        $curH = [int]$matches[2]
+    }
+    $swipeX = [int]($curW * 0.5)
+    $swipeY1 = [int]($curH * 0.75)
+    $swipeY2 = [int]($curH * 0.25)
+
     $startTime = [DateTime]::UtcNow
     $endTime = $startTime.AddSeconds($durationSec)
     
     while ([DateTime]::UtcNow -lt $endTime) {
-        & $adb -s $DeviceSerial shell input swipe 600 900 600 300 180 > $null
+        & $adb -s $DeviceSerial shell input swipe $swipeX $swipeY1 $swipeX $swipeY2 180 > $null
         Start-Sleep -Milliseconds 350
     }
 
@@ -85,19 +96,34 @@ function Measure-Framestats {
     
     $frameTimesMs = [System.Collections.Generic.List[double]]::new()
     $parsingProfileData = $false
+    $intendedIdx = 1
+    $completedIdx = 13
 
     foreach ($line in $rawGfx) {
         if ($line -match "---PROFILEDATA---") {
-            $parsingProfileData = $true
-            continue
+            if (-not $parsingProfileData) {
+                $parsingProfileData = $true
+                continue
+            } else {
+                $parsingProfileData = $false
+                break
+            }
         }
         if ($parsingProfileData) {
-            if ($line -match "Flags," -or [string]::IsNullOrWhiteSpace($line)) { continue }
+            if ($line -match "Flags," -or $line -match "IntendedVsync") {
+                $headers = $line.Trim().Split(',')
+                for ($h = 0; $h -lt $headers.Count; $h++) {
+                    if ($headers[$h] -eq "IntendedVsync") { $intendedIdx = $h }
+                    if ($headers[$h] -eq "FrameCompleted") { $completedIdx = $h }
+                }
+                continue
+            }
+            if ([string]::IsNullOrWhiteSpace($line)) { continue }
             $parts = $line.Trim().Split(',')
-            if ($parts.Count -ge 14) {
+            if ($parts.Count -gt $completedIdx) {
                 try {
-                    $intendedVsync = [int64]$parts[1]
-                    $frameCompleted = [int64]$parts[13]
+                    $intendedVsync = [int64]$parts[$intendedIdx]
+                    $frameCompleted = [int64]$parts[$completedIdx]
                     if ($intendedVsync -gt 0 -and $frameCompleted -gt $intendedVsync) {
                         $durationMs = ($frameCompleted - $intendedVsync) / 1000000.0
                         if ($durationMs -gt 0 -and $durationMs -lt 500) {
@@ -206,6 +232,8 @@ if (-not $SkipResolutionBenchmark) {
         Write-Host "  Testing Resolution: $label..." -ForegroundColor Cyan
         
         & $adb -s $DeviceSerial shell wm size "${w}x${h}" > $null
+        Start-Sleep -Milliseconds 500
+        & $adb -s $DeviceSerial shell am start -n $ActivityName > $null
         Start-Sleep -Seconds 1
         
         $resStats = Measure-Framestats -pkg $PackageName -durationSec $ScrollDurationSeconds -testLabel "Res $label"
