@@ -10,10 +10,8 @@ param(
 
 $ErrorActionPreference = "Continue"
 
-# 0. 도구 및 환경 변수 격리 설정
 $androidHome = "$env:LOCALAPPDATA\Android\Sdk"
 $jdkHome = "$env:LOCALAPPDATA\Android\Jdk"
-$dotnetDir = "$env:LOCALAPPDATA\Microsoft\dotnet"
 
 if (Test-Path $jdkHome) {
     $env:JAVA_HOME = $jdkHome
@@ -27,8 +25,6 @@ if (Test-Path $androidHome) {
 
 $adb = (Get-Command adb.exe -ErrorAction SilentlyContinue).Source
 if (-not $adb) { $adb = "$androidHome\platform-tools\adb.exe" }
-$emulator = (Get-Command emulator.exe -ErrorAction SilentlyContinue).Source
-if (-not $emulator) { $emulator = "$androidHome\emulator\emulator.exe" }
 
 Write-Host "`n========================================================" -ForegroundColor Cyan
 Write-Host " TabletDroid v0.1 Performance Baseline Benchmark Runner" -ForegroundColor Cyan
@@ -37,21 +33,19 @@ Write-Host " Target Package: $PackageName" -ForegroundColor Cyan
 Write-Host " ADB Device    : $DeviceSerial" -ForegroundColor Cyan
 Write-Host "========================================================`n" -ForegroundColor Cyan
 
-# 1. 장치 및 앱 설치 확인
 $devices = & $adb devices
 if ($devices -notmatch $DeviceSerial) {
-    Write-Host "[ERROR] Device '$DeviceSerial' not connected. Please start the emulator first via .\launch.bat" -ForegroundColor Red
+    Write-Host "[ERROR] Device '$DeviceSerial' not connected. Please start emulator first via .\launch.bat" -ForegroundColor Red
     exit 1
 }
 
 $appPath = & $adb -s $DeviceSerial shell pm path $PackageName 2>$null
 if (-not $appPath -or $appPath -notmatch "package:") {
-    Write-Host "[WARN] Package '$PackageName' is not installed. Testing with Fallback Settings App..." -ForegroundColor Yellow
+    Write-Host "[WARN] Package '$PackageName' is not installed. Testing with Settings app..." -ForegroundColor Yellow
     $PackageName = "com.android.settings"
     $ActivityName = "com.android.settings.Settings"
 }
 
-# 2. 벤치마크 헬퍼 함수 정의
 function Measure-AppLaunchTime {
     param([string]$pkg, [string]$act)
     & $adb -s $DeviceSerial shell am force-stop $pkg 2>$null
@@ -74,13 +68,11 @@ function Measure-Framestats {
         [string]$testLabel = "Test"
     )
 
-    Write-Host "  -> Running Framestats collection ($testLabel, ${durationSec}s)..." -ForegroundColor Gray
+    Write-Host "  -> Collecting Framestats ($testLabel, ${durationSec}s)..." -ForegroundColor Gray
     
-    # gfxinfo 초기화
     & $adb -s $DeviceSerial shell dumpsys gfxinfo $pkg reset > $null
     & $adb -s $DeviceSerial shell dumpsys SurfaceFlinger --timestats -clear > $null
 
-    # 스크롤 부하 생성 (터치 제스처 시뮬레이션: 8회)
     $startTime = [DateTime]::UtcNow
     $endTime = $startTime.AddSeconds($durationSec)
     
@@ -89,7 +81,6 @@ function Measure-Framestats {
         Start-Sleep -Milliseconds 350
     }
 
-    # gfxinfo framestats 추출
     $rawGfx = & $adb -s $DeviceSerial shell dumpsys gfxinfo $pkg framestats 2>$null
     
     $frameTimesMs = [System.Collections.Generic.List[double]]::new()
@@ -118,12 +109,9 @@ function Measure-Framestats {
         }
     }
 
-    # Host 및 QEMU 프로세스 리소스 수집
     $qemuProc = Get-Process -Name *qemu* -ErrorAction SilentlyContinue | Select-Object -First 1
     $qemuRamMb = if ($qemuProc) { [math]::Round($qemuProc.WorkingSet64 / 1MB, 1) } else { 0 }
-    $qemuCpu = if ($qemuProc) { [math]::Round($qemuProc.CPU, 1) } else { 0 }
 
-    # 통계 계산
     $totalFrames = $frameTimesMs.Count
     if ($totalFrames -eq 0) {
         return [PSCustomObject]@{
@@ -167,31 +155,25 @@ function Measure-Framestats {
     }
 }
 
-# 3. 테스트 진행 컨테이너
 $results = [System.Collections.Generic.List[PSCustomObject]]::new()
 $artComparison = [ordered]@{}
 $resComparison = [ordered]@{}
 
-# ----------------------------------------------------
-# A/B TEST 1: ART Compilation (Default JIT vs AOT speed)
-# ----------------------------------------------------
+# A/B TEST 1: ART Compilation
 if (-not $SkipArtBenchmark) {
     Write-Host "`n[1/2] Benchmarking ART Compilation (AOT vs JIT)..." -ForegroundColor Yellow
     
-    # 1-1. Before AOT (JIT / Current state)
     Write-Host "  [Step 1A] Measuring Baseline Launch Time & Framestats..." -ForegroundColor Cyan
     $launchTimeBeforeMs = Measure-AppLaunchTime -pkg $PackageName -act $ActivityName
     Write-Host "    Launch Time (Baseline): ${launchTimeBeforeMs} ms" -ForegroundColor Gray
-    $statsBefore = Measure-Framestats -pkg $PackageName -durationSec $ScrollDurationSeconds -testLabel "ART Baseline (JIT/Install)"
+    $statsBefore = Measure-Framestats -pkg $PackageName -durationSec $ScrollDurationSeconds -testLabel "ART Baseline (JIT)"
     $results.Add($statsBefore)
     
-    # 1-2. Apply ART AOT speed compilation
     Write-Host "`n  [Step 1B] Compiling package with 'cmd package compile -m speed -f $PackageName'..." -ForegroundColor Cyan
     $compileOut = & $adb -s $DeviceSerial shell cmd package compile -m speed -f $PackageName 2>$null
     Write-Host "    Compile Status: $compileOut" -ForegroundColor Gray
     Start-Sleep -Seconds 2
 
-    # 1-3. After AOT
     Write-Host "  [Step 1C] Measuring Post-AOT Launch Time & Framestats..." -ForegroundColor Cyan
     $launchTimeAfterMs = Measure-AppLaunchTime -pkg $PackageName -act $ActivityName
     Write-Host "    Launch Time (Post-AOT): ${launchTimeAfterMs} ms" -ForegroundColor Gray
@@ -207,9 +189,7 @@ if (-not $SkipArtBenchmark) {
     $artComparison["FpsDelta"] = [math]::Round($statsAfter.AvgFps - $statsBefore.AvgFps, 1)
 }
 
-# ----------------------------------------------------
-# A/B TEST 2: Resolution Scaling (1920x1200 / 1600x1000 / 1280x800)
-# ----------------------------------------------------
+# A/B TEST 2: Resolution Scaling
 if (-not $SkipResolutionBenchmark) {
     Write-Host "`n[2/2] Benchmarking Resolution Scaling Impact..." -ForegroundColor Yellow
     $resolutions = @(
@@ -221,7 +201,8 @@ if (-not $SkipResolutionBenchmark) {
     foreach ($res in $resolutions) {
         $w = $res.Width
         $h = $res.Height
-        $label = "${w}x${h} ($($res.Pixels))"
+        $pix = $res.Pixels
+        $label = "${w}x${h} ($pix)"
         Write-Host "  Testing Resolution: $label..." -ForegroundColor Cyan
         
         & $adb -s $DeviceSerial shell wm size "${w}x${h}" > $null
@@ -232,19 +213,18 @@ if (-not $SkipResolutionBenchmark) {
         $resComparison["${w}x${h}"] = $resStats.AvgFps
     }
 
-    # 해상도 원복 (1920x1200)
     Write-Host "  Restoring native 1920x1200 resolution..." -ForegroundColor Gray
     & $adb -s $DeviceSerial shell wm size reset > $null
     & $adb -s $DeviceSerial shell wm size 1920x1200 > $null
 }
 
-# 4. 콘솔 요약 테이블 출력
+# Summary Table
 Write-Host "`n====================================================================================" -ForegroundColor Cyan
 Write-Host " TabletDroid Performance Benchmark Summary Table" -ForegroundColor Cyan
 Write-Host "====================================================================================" -ForegroundColor Cyan
 $results | Format-Table -Property Label, AvgFps, AvgFrameTimeMs, P50Ms, P90Ms, P99Ms, JankPercent, TotalFrames, QemuRamMb -AutoSize | Out-String | Write-Host -ForegroundColor Green
 
-# 5. 마크다운 보고서 생성 및 저장
+# Save Markdown Report
 if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 }
@@ -252,70 +232,79 @@ if (-not (Test-Path $OutputDir)) {
 $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 $reportFile = "$OutputDir\baseline_v0.1.md"
 
-$md = @()
-$md += "# TabletDroid v0.1 Performance Baseline Benchmark"
-$md += ""
-$md += "- **Timestamp**: $timestamp"
-$md += "- **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, RTX 3050 Ti Laptop GPU, 16GB RAM)"
-$md += "- **WHPX Accelerator**: Active & Operational"
-$md += "- **Target App**: `$PackageName`"
-$md += "- **Emulator Serial**: `$DeviceSerial`"
-$md += ""
-$md += "---"
-$md += ""
-$md += "## 1. Frame Metrics Summary"
-$md += ""
-$md += "| Test Scenario | Avg FPS | Avg FrameTime | P50 (ms) | P90 (ms) | P99 (ms) | Jank Rate (%) | Samples | QEMU RAM |"
-$md += "| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |"
+$mdLines = [System.Collections.Generic.List[string]]::new()
+$mdLines.Add("# TabletDroid v0.1 Performance Baseline Benchmark")
+$mdLines.Add("")
+$mdLines.Add("- **Timestamp**: $timestamp")
+$mdLines.Add("- **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, RTX 3050 Ti Laptop GPU, 16GB RAM)")
+$mdLines.Add("- **WHPX Accelerator**: Active & Operational")
+$mdLines.Add("- **Target App**: $PackageName")
+$mdLines.Add("- **Emulator Serial**: $DeviceSerial")
+$mdLines.Add("")
+$mdLines.Add("---")
+$mdLines.Add("")
+$mdLines.Add("## 1. Frame Metrics Summary")
+$mdLines.Add("")
+$mdLines.Add("| Test Scenario | Avg FPS | Avg FrameTime | P50 (ms) | P90 (ms) | P99 (ms) | Jank Rate (%) | Samples | QEMU RAM |")
+$mdLines.Add("| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
 
 foreach ($r in $results) {
-    $md += "| **$($r.Label)** | **$($r.AvgFps)** | $($r.AvgFrameTimeMs) ms | $($r.P50Ms) ms | $($r.P90Ms) ms | $($r.P99Ms) ms | $($r.JankPercent)% | $($r.TotalFrames) | $($r.QemuRamMb) MB |"
+    $row = "| **" + $r.Label + "** | **" + $r.AvgFps + "** | " + $r.AvgFrameTimeMs + " ms | " + $r.P50Ms + " ms | " + $r.P90Ms + " ms | " + $r.P99Ms + " ms | " + $r.JankPercent + "% | " + $r.TotalFrames + " | " + $r.QemuRamMb + " MB |"
+    $mdLines.Add($row)
 }
 
-$md += ""
-$md += "---"
-$md += ""
-$md += "## 2. A/B Bottleneck Isolation Analysis"
-$md += ""
+$mdLines.Add("")
+$mdLines.Add("---")
+$mdLines.Add("")
+$mdLines.Add("## 2. A/B Bottleneck Isolation Analysis")
+$mdLines.Add("")
 
 if ($artComparison.Count -gt 0) {
-    $md += "### 2.1 ART Compilation Impact (JIT vs AOT speed filter)"
-    $md += "- **Launch Time Before AOT**: $($artComparison['LaunchBeforeMs']) ms"
-    $md += "- **Launch Time After AOT**: $($artComparison['LaunchAfterMs']) ms (Delta: $($artComparison['LaunchDeltaMs']) ms)"
-    $md += "- **Scroll Avg FPS (Before)**: $($artComparison['FpsBefore']) FPS"
-    $md += "- **Scroll Avg FPS (After)**: $($artComparison['FpsAfter']) FPS (Delta: $($artComparison['FpsDelta']) FPS)"
-    $md += ""
-    $md += "> **Interpretation**:"
-    if ($artComparison['FpsDelta'] -ge 10) {
-        $md += "> ART ahead-of-time compilation provides a SIGNIFICANT framerate improvement (+$(($artComparison['FpsDelta'])) FPS). JIT compiler thrashing was a primary bottleneck."
+    $lBefore = $artComparison['LaunchBeforeMs']
+    $lAfter = $artComparison['LaunchAfterMs']
+    $lDelta = $artComparison['LaunchDeltaMs']
+    $fBefore = $artComparison['FpsBefore']
+    $fAfter = $artComparison['FpsAfter']
+    $fDelta = $artComparison['FpsDelta']
+
+    $mdLines.Add("### 2.1 ART Compilation Impact (JIT vs AOT speed filter)")
+    $mdLines.Add("- **Launch Time Before AOT**: $lBefore ms")
+    $mdLines.Add("- **Launch Time After AOT**: $lAfter ms (Delta: $lDelta ms)")
+    $mdLines.Add("- **Scroll Avg FPS (Before)**: $fBefore FPS")
+    $mdLines.Add("- **Scroll Avg FPS (After)**: $fAfter FPS (Delta: $fDelta FPS)")
+    $mdLines.Add("")
+    $mdLines.Add("> **Interpretation**:")
+    if ($fDelta -ge 10) {
+        $mdLines.Add("> ART ahead-of-time compilation provides a SIGNIFICANT framerate improvement (+$fDelta FPS). JIT compiler thrashing was a primary bottleneck.")
     } else {
-        $md += "> ART compilation improved launch time, but framerate during active scrolling remained relatively flat (Delta: +$(($artComparison['FpsDelta'])) FPS). This indicates the bottleneck is primarily in the Graphics/Surface rendering and IPC composition pipeline."
+        $mdLines.Add("> ART compilation improved launch time, but framerate during active scrolling remained relatively flat (Delta: +$fDelta FPS). This indicates the bottleneck is primarily in the Graphics/Surface rendering and IPC composition pipeline.")
     }
-    $md += ""
+    $mdLines.Add("")
 }
 
 if ($resComparison.Count -gt 0) {
-    $md += "### 2.2 Resolution Scaling Impact"
+    $mdLines.Add("### 2.2 Resolution Scaling Impact")
     foreach ($k in $resComparison.Keys) {
-        $md += "- **$k**: $($resComparison[$k]) FPS"
+        $v = $resComparison[$k]
+        $mdLines.Add("- **$k**: $v FPS")
     }
-    $md += ""
-    $md += "> **Interpretation**:"
+    $mdLines.Add("")
+    $mdLines.Add("> **Interpretation**:")
     $fps1920 = $resComparison["1920x1200"]
     $fps1280 = $resComparison["1280x800"]
     if ($fps1280 -gt ($fps1920 * 1.5)) {
-        $md += "> Framerate scaled dramatically when lowering resolution ($fps1920 -> $fps1280 FPS). This is strong evidence that **pixel throughput / framebuffer IPC transfer** is the primary bottleneck."
+        $mdLines.Add("> Framerate scaled dramatically when lowering resolution ($fps1920 -> $fps1280 FPS). This is strong evidence that **pixel throughput / framebuffer IPC transfer** is the primary bottleneck.")
     } else {
-        $md += "> Framerate stayed flat across resolutions ($fps1920 -> $fps1280 FPS). This indicates that the bottleneck is likely **VM scheduling, SurfaceFlinger Vsync pacing, or guest app frame production logic** rather than pure pixel transfer."
+        $mdLines.Add("> Framerate stayed flat across resolutions ($fps1920 -> $fps1280 FPS). This indicates that the bottleneck is likely **VM scheduling, SurfaceFlinger Vsync pacing, or guest app frame production logic** rather than pure pixel transfer.")
     }
-    $md += ""
+    $mdLines.Add("")
 }
 
-$md += "---"
-$md += ""
-$md += "## 3. Recommended Architectural Decision for v0.1"
-$md += "- Reference Ticket: `perf: establish v0.1 rendering baseline and isolate frame bottleneck`"
-$md += "- Next Step: `research: validate external GPU surface path for TabletDroid Host`"
+$mdLines.Add("---")
+$mdLines.Add("")
+$mdLines.Add('## 3. Recommended Architectural Decision for v0.1')
+$mdLines.Add('- Reference Ticket: `perf: establish v0.1 rendering baseline and isolate frame bottleneck`')
+$mdLines.Add('- Next Step: `research: validate external GPU surface path for TabletDroid Host`')
 
-$md | Set-Content $reportFile -Encoding UTF8
+[System.IO.File]::WriteAllLines($reportFile, $mdLines, [System.Text.Encoding]::UTF8)
 Write-Host "[OK] Benchmark report written to: $reportFile`n" -ForegroundColor Green
