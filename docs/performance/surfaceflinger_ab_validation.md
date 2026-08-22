@@ -1,4 +1,7 @@
-﻿# TabletDroid v0.1 SurfaceFlinger 4-Way A/B Statistical Validation Report
+# TabletDroid v0.1 SurfaceFlinger 4-Way A/B Statistical Validation Report
+
+> [!WARNING]
+> **SUPERSEDED & INVALIDATED**: Historical exploratory claims that `debug.sf.latch_unsignaled` or `debug.sf.disable_backpressure` improved presentation throughput were artifacts of non-deterministic input generation and Quick Boot snapshot state. The definitive deterministic characterization in [`docs/performance/surfaceflinger_regression_ab.md`](surfaceflinger_regression_ab.md) shows that in a clean cold-boot environment with `hw.gltransport=pipe`, the baseline natively runs at **59.90 ~ 59.97 FPS** without property injection. Property injection has been permanently purged from the launch pipeline.
 
 - **Timestamp**: 2026-08-20 00:51:22
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)

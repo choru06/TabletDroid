@@ -1,6 +1,6 @@
 ﻿# TabletDroid v0.1 Canonical Deterministic Benchmark Workload Report (Telemetry OFF)
 
-- **Timestamp**: 2026-08-20 04:25:54
+- **Timestamp**: 2026-08-23 05:26:43
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **WHPX Acceleration**: Active & Operational
 - **Target Package**: com.tabletdroid.benchmark
@@ -17,17 +17,17 @@
 
 | Condition | Valid Trials | Presented FPS | FPS [Min, Max] | StdDev | FPS CV% | Distance (px) | Dist CV% | Latency Avg | P50 (ms) | P90 (ms) | P99 (ms) | Jank % | CPU Avg % | GPU 3D % |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Canonical BenchmarkApp (Telemetry OFF)** | 5 / 5 | **12.46 FPS** | [11.57, 14.23] | 0.94 | 7.3% | 24200 px | 0.4% | 218.01 ms | 166.43 ms | 353.56 ms | 424.86 ms | 100% | OFF | OFF |
+| **Canonical BenchmarkApp (Telemetry OFF)** | 5 / 5 | **59.94 FPS** | [56.06, 59.97] | 1.55 | 2.6% | 24000 px | 0% | 30.1 ms | 25.21 ms | 42.18 ms | 52.85 ms | 100% | OFF | OFF |
 
 ### 1.1 All Raw Trial Records
 
 | Trial ID | Condition | Status | Duration (s) | Target Layer | SF Start | SF End | Delta | Presented FPS | Actual Dist (px) | Expected Dist (px) | Gfx Records | Latency Avg (ms) | P50 (ms) | P90 (ms) | Jank % | CPU % (Samples) | GPU 3D % (Samples, Matched) |
 | :--- | :--- | :---: | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Canonical_Workload (T1) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.012s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2483 | 118 | 525 | 407 | 13.56 FPS | 24186 px | 24009.6 px | 120 | 218.01 ms | 135 ms | 547.15 ms | 100% | 0% (0) | 0% (0, 0) |
-| Canonical_Workload (T2) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.003s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2483 | 652 | 999 | 347 | 11.57 FPS | 24200 px | 24002.4 px | 120 | 304.05 ms | 193.06 ms | 808.2 ms | 100% | 0% (0) | 0% (0, 0) |
-| Canonical_Workload (T3) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.006s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2483 | 1128 | 1555 | 427 | 14.23 FPS | 24413 px | 24004.8 px | 120 | 126.77 ms | 131.23 ms | 159.55 ms | 100% | 0% (0) | 0% (0, 0) |
-| Canonical_Workload (T4) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2483 | 1701 | 2075 | 374 | 12.46 FPS | 24200 px | 24010.4 px | 120 | 226.07 ms | 212.9 ms | 353.56 ms | 100% | 0% (0) | 0% (0, 0) |
-| Canonical_Workload (T5) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.001s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#2483 | 2206 | 2578 | 372 | 12.4 FPS | 24213 px | 24000.8 px | 120 | 189.46 ms | 166.43 ms | 322.65 ms | 100% | 0% (0) | 0% (0, 0) |
+| Canonical_Workload (T1) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.004s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#97 | 370 | 2052 | 1682 | 56.06 FPS | 24027 px | 24003.2 px | 120 | 40.72 ms | 41.85 ms | 47.75 ms | 100% | 0% (0) | 0% (0, 0) |
+| Canonical_Workload (T2) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#97 | 2664 | 4463 | 1799 | 59.94 FPS | 24000 px | 24010.4 px | 120 | 30.1 ms | 25.21 ms | 42.18 ms | 100% | 0% (0) | 0% (0, 0) |
+| Canonical_Workload (T3) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#97 | 5085 | 6883 | 1798 | 59.91 FPS | 24000 px | 24010.4 px | 119 | 34.8 ms | 32.59 ms | 51.57 ms | 100% | 0% (0) | 0% (0, 0) |
+| Canonical_Workload (T4) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.001s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#97 | 7505 | 9304 | 1799 | 59.96 FPS | 24000 px | 24000.8 px | 120 | 24.23 ms | 23.96 ms | 25.54 ms | 100% | 0% (0) | 0% (0, 0) |
+| Canonical_Workload (T5) | Canonical BenchmarkApp (Telemetry OFF) | VALID | 30.015s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#97 | 9924 | 11724 | 1800 | 59.97 FPS | 24000 px | 24012 px | 120 | 24.73 ms | 24.42 ms | 26.04 ms | 100% | 0% (0) | 0% (0, 0) |
 
 ---
 
@@ -41,11 +41,11 @@
 
 ## 3. [INFERENCE] Findings & Conclusions
 ### 3.1 Canonical Workload Evaluation (Telemetry OFF)
-- **Presented FPS**: **12.46 FPS** (StdDev: 0.94, CV: 7.3%)
-- **Workload Distance**: **24200 px** (CV: 0.4%)
-- **Frame Latency**: P50 = **166.43 ms**, P90 = **353.56 ms**, Jank = **100%**
+- **Presented FPS**: **59.94 FPS** (StdDev: 1.55, CV: 2.6%)
+- **Workload Distance**: **24000 px** (CV: 0%)
+- **Frame Latency**: P50 = **25.21 ms**, P90 = **42.18 ms**, Jank = **100%**
 
-> **Conclusion**: Workload determinism is strictly verified (Distance CV = 0.4% <= 10%).
+> **Conclusion**: Workload determinism is strictly verified (Distance CV = 0% <= 10%).
 
 ---
 

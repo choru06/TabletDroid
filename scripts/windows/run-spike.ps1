@@ -85,7 +85,7 @@ $isRunning = $devices -match $deviceSerial
 
 if (-not $isRunning) {
     Write-Host "  Starting Emulator '$AvdName' on port $ConsolePort with High Performance Settings..." -ForegroundColor Gray
-    Start-Process -FilePath $emulator -ArgumentList "-avd", $AvdName, "-port", $ConsolePort, "-accel", "on", "-gpu", "host", "-dns-server", "8.8.8.8,1.1.1.1", "-no-skin", "-no-snapshot-save", "-no-boot-anim"
+    Start-Process -FilePath $emulator -ArgumentList "-avd", $AvdName, "-port", $ConsolePort, "-accel", "on", "-gpu", "host", "-dns-server", "8.8.8.8,1.1.1.1", "-no-skin", "-no-snapshot", "-no-snapshot-save", "-no-boot-anim"
 }
 
 Write-Host "  Waiting for sys.boot_completed=1 (max 120s)..." -ForegroundColor Gray
@@ -119,9 +119,7 @@ $results["Fullscreen Policy"] = "PASS"
 Write-Host "`n[6/8] Starting GuestAgent Service & Setting up Port Forwarding..." -ForegroundColor Yellow
 & $adb -s $deviceSerial shell am startservice -n com.tabletdroid.guestagent/.GuestService 2>$null
 & $adb -s $deviceSerial forward tcp:$GuestPort tcp:$GuestPort 2>$null
-& $adb -s $deviceSerial shell setprop debug.sf.latch_unsignaled 1 2>$null
-& $adb -s $deviceSerial shell setprop debug.sf.disable_backpressure 1 2>$null
-Write-Host "  [PASS] Port tcp:$GuestPort forwarded to Guest & SurfaceFlinger low-latency tuned." -ForegroundColor Green
+Write-Host "  [PASS] Port tcp:$GuestPort forwarded to Guest." -ForegroundColor Green
 $results["Guest Forward"] = "PASS"
 
 # 7. Instagram 설치 여부 확인
