@@ -1,7 +1,7 @@
 # ==============================================================================
-# TabletDroid Canonical Fixed 120Hz Feasibility Spike
-# Base: f5454ea+
-# Condition: hw.lcd.vsync = 120, hw.gpu.mode = host, hw.gltransport = pipe, -no-snapshot, -no-snapshot-save
+# TabletDroid Canonical 120Hz VSYNC Break Isolation & Feasibility Characterization
+# Base: 23f3070+
+# Target: hw.lcd.vsync = 120, hw.gpu.mode = host, hw.gltransport = pipe
 # ==============================================================================
 $ErrorActionPreference = "Stop"
 
@@ -15,7 +15,7 @@ $PackageName = "com.tabletdroid.benchmark"
 $BenchmarkActivity = "$PackageName/.BenchmarkActivity"
 
 Write-Host "================================================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid Canonical Fixed 120Hz Feasibility Spike" -ForegroundColor Cyan
+Write-Host " TabletDroid Canonical 120Hz VSYNC Break Isolation & Feasibility" -ForegroundColor Cyan
 Write-Host " Target Hardware  : ASUS ROG Flow Z13 / Windows 11" -ForegroundColor Cyan
 Write-Host " Target Display   : 1920x1200 @ 120Hz" -ForegroundColor Cyan
 Write-Host " Target Profile   : hw.lcd.vsync=120, hw.gpu.mode=host, hw.gltransport=pipe" -ForegroundColor Cyan
@@ -40,7 +40,7 @@ function Invoke-AdbOutput {
     $stdout = $p.StandardOutput.ReadToEnd()
     $stderr = $p.StandardError.ReadToEnd()
     $p.WaitForExit()
-    return $stdout
+    return $stdout.Trim()
 }
 
 function Invoke-AdbGlobalOutput {
@@ -56,13 +56,13 @@ function Invoke-AdbGlobalOutput {
     $stdout = $p.StandardOutput.ReadToEnd()
     $stderr = $p.StandardError.ReadToEnd()
     $p.WaitForExit()
-    return $stdout
+    return $stdout.Trim()
 }
 
 # -----------------------------------------------------------------------------
 # STEP 1: Windows Display Mode Verification
 # -----------------------------------------------------------------------------
-Write-Host "`n[1/7] Detecting Host Physical Display Configuration..." -ForegroundColor Yellow
+Write-Host "`n[1/8] Detecting Host Physical Display Configuration..." -ForegroundColor Yellow
 $winDisplay = Get-CimInstance -ClassName Win32_VideoController | Select-Object -First 1
 $winRefreshRate = $winDisplay.CurrentRefreshRate
 $winResW = $winDisplay.CurrentHorizontalResolution
@@ -79,9 +79,9 @@ if ($winRefreshRate -lt 120) {
 }
 
 # -----------------------------------------------------------------------------
-# STEP 2: Clean Emulator Termination & Config Readback
+# STEP 2: Clean Emulator Termination & Fail-Closed Config Readback
 # -----------------------------------------------------------------------------
-Write-Host "`n[2/7] Terminating Any Existing Emulator Process..." -ForegroundColor Yellow
+Write-Host "`n[2/8] Terminating Any Existing Emulator Process..." -ForegroundColor Yellow
 $oldProcs = Get-Process -Name qemu-system-x86_64,emulator -ErrorAction SilentlyContinue
 $oldPids = if ($oldProcs) { ($oldProcs | ForEach-Object { $_.Id }) -join ',' } else { "NONE" }
 Write-Host "  Existing Emulator PID(s): $oldPids" -ForegroundColor Gray
@@ -129,17 +129,32 @@ if (-not $gpuModeSet) { $newConfigLines.Add("hw.gpu.mode = host") }
 
 Set-Content -Path $avdConfigPath -Value $newConfigLines -Encoding UTF8
 
-# Readback verification
-Write-Host "  Verifying config.ini readback:" -ForegroundColor Gray
-$readback = Get-Content $avdConfigPath | Where-Object { $_ -match "^hw\.(lcd\.vsync|gpu\.mode|gltransport)\s*=" }
-foreach ($rb in $readback) {
-    Write-Host "    $rb" -ForegroundColor Cyan
+# Fail-Closed Readback Verification
+Write-Host "  Verifying config.ini readback (Fail-Closed Gate):" -ForegroundColor Gray
+$readbackMap = @{}
+Get-Content $avdConfigPath | ForEach-Object {
+    if ($_ -match "^\s*(?<k>hw\.[a-zA-Z0-9\._]+)\s*=\s*(?<v>[^\s\r\n#]+)") {
+        $readbackMap[$Matches['k']] = $Matches['v']
+    }
 }
+
+$readLcdVsync = $readbackMap['hw.lcd.vsync']
+$readGpuMode = $readbackMap['hw.gpu.mode']
+$readGlTransport = $readbackMap['hw.gltransport']
+
+Write-Host "    hw.lcd.vsync    = $readLcdVsync (Expected: 120)" -ForegroundColor Cyan
+Write-Host "    hw.gpu.mode     = $readGpuMode (Expected: host)" -ForegroundColor Cyan
+Write-Host "    hw.gltransport  = $readGlTransport (Expected: pipe)" -ForegroundColor Cyan
+
+if ($readLcdVsync -ne "120" -or $readGpuMode -ne "host" -or $readGlTransport -ne "pipe") {
+    throw "FAIL: AVD config readback verification failed! (vsync=$readLcdVsync, gpu=$readGpuMode, transport=$readGlTransport)"
+}
+Write-Host "  [PASS] AVD config fail-closed readback verified." -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
 # STEP 3: Clean Cold Boot (-no-snapshot, -no-snapshot-save)
 # -----------------------------------------------------------------------------
-Write-Host "`n[3/7] Cold Booting Emulator (-no-snapshot, -no-snapshot-save)..." -ForegroundColor Yellow
+Write-Host "`n[3/8] Cold Booting Emulator (-no-snapshot, -no-snapshot-save)..." -ForegroundColor Yellow
 $spikeScript = "$rootDir\scripts\windows\run-spike.ps1"
 & powershell.exe -ExecutionPolicy Bypass -File $spikeScript -ConsolePort 5554 -LaunchHost $false
 if ($LASTEXITCODE -ne 0) { throw "run-spike.ps1 failed!" }
@@ -148,34 +163,71 @@ $newProcs = Get-Process -Name qemu-system-x86_64,emulator -ErrorAction SilentlyC
 $newPids = if ($newProcs) { ($newProcs | ForEach-Object { $_.Id }) -join ',' } else { "UNKNOWN" }
 Write-Host "  [OK] New Emulator PID(s): $newPids (Old PIDs: $oldPids)" -ForegroundColor Green
 
-# Ensure Benchmark APK is installed and timestats enabled
+# Install updated Benchmark APK
 Write-Host "  Installing Benchmark APK..." -ForegroundColor Gray
 Invoke-AdbSilent "install -r -d -t `"$rootDir\bin\TabletDroid.Benchmark.apk`"" | Out-Null
 Invoke-AdbSilent "shell `"dumpsys SurfaceFlinger --timestats -enable`"" | Out-Null
 Invoke-AdbSilent "shell `"dumpsys SurfaceFlinger --timestats -clear`"" | Out-Null
 
 # -----------------------------------------------------------------------------
-# STEP 4: Guest Refresh Rate & Display Telemetry Inspection
+# STEP 4: Raw Guest VSYNC Properties & Platform Subsystem Inspection
 # -----------------------------------------------------------------------------
-Write-Host "`n[4/7] Inspecting Android Guest Display Modes & VSYNC Cadence..." -ForegroundColor Yellow
+Write-Host "`n[4/8] Inspecting Raw Guest VSYNC Properties & Platform Subsystem..." -ForegroundColor Yellow
 
-# 1. DisplayManager
+$propKernelQemuVsync = Invoke-AdbOutput "shell getprop ro.kernel.qemu.vsync"
+if ([string]::IsNullOrWhiteSpace($propKernelQemuVsync)) { $propKernelQemuVsync = "N/A" }
+
+$propBootQemuVsync = Invoke-AdbOutput "shell getprop ro.boot.qemu.vsync"
+if ([string]::IsNullOrWhiteSpace($propBootQemuVsync)) { $propBootQemuVsync = "N/A" }
+
+$propQemuVsync = Invoke-AdbOutput "shell getprop qemu.vsync"
+if ([string]::IsNullOrWhiteSpace($propQemuVsync)) { $propQemuVsync = "N/A" }
+
+$propAllVsync = Invoke-AdbOutput "shell `"getprop | grep -i vsync`""
+if ([string]::IsNullOrWhiteSpace($propAllVsync)) { $propAllVsync = "N/A" }
+
+$hwComposer = Invoke-AdbOutput "shell getprop ro.hardware.hwcomposer"
+if ([string]::IsNullOrWhiteSpace($hwComposer)) { $hwComposer = "N/A" }
+
+$buildFingerprint = Invoke-AdbOutput "shell getprop ro.build.fingerprint"
+if ([string]::IsNullOrWhiteSpace($buildFingerprint)) { $buildFingerprint = "N/A" }
+
+$apiLevel = Invoke-AdbOutput "shell getprop ro.build.version.sdk"
+if ([string]::IsNullOrWhiteSpace($apiLevel)) { $apiLevel = "N/A" }
+
+# Display HAL / Composer Service Inspection
+$lshalComposer = Invoke-AdbOutput "shell `"lshal 2>/dev/null | grep -i composer`""
+if ([string]::IsNullOrWhiteSpace($lshalComposer)) { $lshalComposer = "N/A" }
+
+Write-Host "  ro.kernel.qemu.vsync              : $propKernelQemuVsync" -ForegroundColor Cyan
+Write-Host "  ro.boot.qemu.vsync                : $propBootQemuVsync" -ForegroundColor Cyan
+Write-Host "  qemu.vsync                        : $propQemuVsync" -ForegroundColor Cyan
+Write-Host "  ro.hardware.hwcomposer            : $hwComposer" -ForegroundColor Cyan
+Write-Host "  Android API Level                 : $apiLevel" -ForegroundColor Cyan
+Write-Host "  Build Fingerprint                 : $buildFingerprint" -ForegroundColor Cyan
+
+# -----------------------------------------------------------------------------
+# STEP 5: Multi-Layer Display & Refresh Rate Telemetry Inspection
+# -----------------------------------------------------------------------------
+Write-Host "`n[5/8] Inspecting Multi-Layer Display Modes & Refresh Rates..." -ForegroundColor Yellow
+
+# Layer C: DisplayManager
 $dispDump = Invoke-AdbOutput "shell dumpsys display"
 $dispModeMatches = [regex]::Matches($dispDump, 'Mode\{\s*id=\d+.*?fps=([\d\.]+).*?\}')
-$supportedModes = if ($dispModeMatches.Count -gt 0) {
+$dmSupportedModes = if ($dispModeMatches.Count -gt 0) {
     ($dispModeMatches | ForEach-Object { "$([math]::Round([double]$_.Groups[1].Value, 2)) Hz" }) -join ', '
 } else {
     "N/A / PARSE_UNAVAILABLE"
 }
 
-$currentModeFps = "N/A / PARSE_UNAVAILABLE"
+$dmCurrentModeFps = "N/A / PARSE_UNAVAILABLE"
 if ($dispDump -match "mCurrentDisplayMode.*?fps=([\d\.]+)") {
-    $currentModeFps = "$([math]::Round([double]$Matches[1], 2)) Hz"
+    $dmCurrentModeFps = "$([math]::Round([double]$Matches[1], 2)) Hz"
 } elseif ($dispDump -match "fps=([\d\.]+)") {
-    $currentModeFps = "$([math]::Round([double]$Matches[1], 2)) Hz"
+    $dmCurrentModeFps = "$([math]::Round([double]$Matches[1], 2)) Hz"
 }
 
-# 2. SurfaceFlinger TimeStats
+# Layer D: SurfaceFlinger TimeStats
 $sfTimestats = Invoke-AdbOutput "shell `"dumpsys SurfaceFlinger --timestats -dump`""
 $sfDisplayRefreshRate = if ($sfTimestats -match "displayRefreshRate\s*=\s*(\d+)") {
     "$([int]$Matches[1]) Hz"
@@ -183,7 +235,7 @@ $sfDisplayRefreshRate = if ($sfTimestats -match "displayRefreshRate\s*=\s*(\d+)"
     "N/A / PARSE_UNAVAILABLE"
 }
 
-# 3. SurfaceFlinger vsyncPeriod
+# SurfaceFlinger vsyncPeriod
 $sfDump = Invoke-AdbOutput "shell dumpsys SurfaceFlinger"
 $sfVsyncPeriodNs = if ($sfDump -match "vsyncPeriod\s*=\s*(\d+)") { [int64]$Matches[1] } else { 0 }
 $sfVsyncPeriodDisplay = if ($sfVsyncPeriodNs -gt 0) {
@@ -192,16 +244,14 @@ $sfVsyncPeriodDisplay = if ($sfVsyncPeriodNs -gt 0) {
     "N/A / PARSE_UNAVAILABLE"
 }
 
-Write-Host "  DisplayManager Current Mode       : $currentModeFps" -ForegroundColor Cyan
-Write-Host "  DisplayManager Supported Modes    : $supportedModes" -ForegroundColor Cyan
-Write-Host "  SurfaceFlinger displayRefreshRate : $sfDisplayRefreshRate" -ForegroundColor Cyan
-Write-Host "  SurfaceFlinger vsyncPeriod        : $sfVsyncPeriodDisplay" -ForegroundColor Cyan
+Write-Host "  Layer A: AVD config.ini           : hw.lcd.vsync = $readLcdVsync" -ForegroundColor Cyan
+Write-Host "  Layer B: Guest qemu.vsync Prop    : $propQemuVsync" -ForegroundColor Cyan
+Write-Host "  Layer C: DisplayManager Current   : $dmCurrentModeFps (Supported: $dmSupportedModes)" -ForegroundColor Cyan
+Write-Host "  Layer D: SurfaceFlinger Refresh   : $sfDisplayRefreshRate (vsyncPeriod: $sfVsyncPeriodDisplay)" -ForegroundColor Cyan
 
 # -----------------------------------------------------------------------------
-# STEP 5: Canonical 120Hz Standalone Benchmark (5 Trials)
+# STEP 6: Target Layer Stats Helper (Fail-Closed on Missing Layer)
 # -----------------------------------------------------------------------------
-Write-Host "`n[5/7] Executing Canonical 120Hz Standalone Benchmark (5 Trials)..." -ForegroundColor Yellow
-
 function Get-SurfaceFlingerTargetStats {
     $raw = Invoke-AdbOutput "shell `"dumpsys SurfaceFlinger --timestats -dump`""
     $blocks = $raw -split "(?=layerName\s*=)"
@@ -293,6 +343,7 @@ function Run-Canonical120Trial {
     $sfEnd = Get-SurfaceFlingerTargetStats
     $deltaSfFrames = $sfEnd.TotalFrames - $sfStart.TotalFrames
     $deltaDropped = $sfEnd.DroppedFrames - $sfStart.DroppedFrames
+    $layerConsistent = ($sfStart.Found -and $sfEnd.Found -and ($sfStart.LayerId -eq $sfEnd.LayerId))
 
     # 7. Stop Benchmark & Collect JSON Status
     Invoke-AdbSilent "shell am broadcast -p $PackageName -a com.tabletdroid.benchmark.ACTION_STOP" | Out-Null
@@ -306,6 +357,10 @@ function Run-Canonical120Trial {
     $actualDistance = 0.0
     $elapsedMeasureMs = 0
     $measureFrames = 0
+    $appDisplayRefreshRate = 0.0
+    $appModeFps = 0.0
+    $appModeId = 0
+    $appSupportedModes = "N/A"
 
     if ($statusMatches.Count -gt 0) {
         for ($i = $statusMatches.Count - 1; $i -ge 0; $i--) {
@@ -318,6 +373,10 @@ function Run-Canonical120Trial {
                     $actualDistance = [double]$j.actualDistance
                     $elapsedMeasureMs = [int64]$j.elapsedMeasureMs
                     $measureFrames = [int64]$j.measureFrames
+                    if ($null -ne $j.appDisplayRefreshRate) { $appDisplayRefreshRate = [double]$j.appDisplayRefreshRate }
+                    if ($null -ne $j.appModeFps) { $appModeFps = [double]$j.appModeFps }
+                    if ($null -ne $j.appModeId) { $appModeId = [int]$j.appModeId }
+                    if ($null -ne $j.appSupportedModes) { $appSupportedModes = ($j.appSupportedModes | ForEach-Object { "$($_.fps)Hz" }) -join ', ' }
                     break
                 } elseif ($status -eq "UNKNOWN") {
                     $status = $j.status
@@ -325,6 +384,9 @@ function Run-Canonical120Trial {
                     $actualDistance = [double]$j.actualDistance
                     $elapsedMeasureMs = [int64]$j.elapsedMeasureMs
                     $measureFrames = [int64]$j.measureFrames
+                    if ($null -ne $j.appDisplayRefreshRate) { $appDisplayRefreshRate = [double]$j.appDisplayRefreshRate }
+                    if ($null -ne $j.appModeFps) { $appModeFps = [double]$j.appModeFps }
+                    if ($null -ne $j.appModeId) { $appModeId = [int]$j.appModeId }
                 }
             } catch {}
         }
@@ -335,17 +397,11 @@ function Run-Canonical120Trial {
         [math]::Round(($measureFrames / ($elapsedMeasureMs / 1000.0)), 2)
     } else { 0.0 }
 
-    # Calculate SurfaceFlinger Presented FPS
-    $presentedFps = if ($deltaSfFrames -gt 0 -and $actualDurationSec -gt 0) {
+    # Calculate SurfaceFlinger Presented FPS (FAIL-CLOSED: If SF layer unavailable, do NOT substitute gfxinfo)
+    $presentedFps = if ($layerConsistent -and $deltaSfFrames -gt 0 -and $actualDurationSec -gt 0) {
         [math]::Round($deltaSfFrames / $actualDurationSec, 2)
     } else {
-        # Fallback to gfxinfo if SF layer not active
-        $gfxRaw = Invoke-AdbOutput "shell dumpsys gfxinfo $PackageName"
-        if ($gfxRaw -match "Total frames rendered:\s*(\d+)") {
-            [math]::Round([int64]$Matches[1] / $actualDurationSec, 2)
-        } else {
-            0.0
-        }
+        0.0
     }
 
     # Canonical Validity Gates
@@ -356,17 +412,19 @@ function Run-Canonical120Trial {
     $isVersionValid = ($workloadVersion -eq "1.0.0")
     $isDistanceValid = ($actualDistance -gt 0 -and $distErrorPct -le 10.0)
     $isDurationValid = ([math]::Abs($actualDurationSec - $measureSec) -le 1.5)
+    $isSfLayerValid = ($layerConsistent -and $deltaSfFrames -gt 0)
 
-    $isValid = ($isComplete -and $isVersionValid -and $isDistanceValid -and $isDurationValid)
+    $isValid = ($isComplete -and $isVersionValid -and $isDistanceValid -and $isDurationValid -and $isSfLayerValid)
     $validationReason = if (-not $isComplete) { "STATUS_NOT_COMPLETE ($status)" }
                         elseif (-not $isVersionValid) { "INVALID_VERSION ($workloadVersion)" }
                         elseif ($actualDistance -le 0) { "DISTANCE_ZERO" }
                         elseif ($distErrorPct -gt 10.0) { "DISTANCE_OUT_OF_RANGE (${actualDistance}px, Err: $([math]::Round($distErrorPct,1))%)" }
                         elseif (-not $isDurationValid) { "DURATION_OUT_OF_TOLERANCE (${actualDurationSec}s)" }
+                        elseif (-not $isSfLayerValid) { "SF_LAYER_UNAVAILABLE" }
                         else { "VALID" }
 
     $color = if ($isValid) { "Green" } else { "Red" }
-    Write-Host "     Guest Choreo: ${guestChoreographerRate} FPS | SF Presented: ${presentedFps} FPS | Dist: ${actualDistance} px | Frames: $measureFrames | [$validationReason]" -ForegroundColor $color
+    Write-Host "     Guest Choreo: ${guestChoreographerRate} FPS | App Disp: ${appDisplayRefreshRate} Hz | SF Presented: ${presentedFps} FPS | Dropped: $deltaDropped | [$validationReason]" -ForegroundColor $color
 
     return [PSCustomObject]@{
         Trial = $trialNum
@@ -374,6 +432,10 @@ function Run-Canonical120Trial {
         Status = $status
         WorkloadVersion = $workloadVersion
         GuestChoreographerRate = $guestChoreographerRate
+        AppDisplayRefreshRate = $appDisplayRefreshRate
+        AppModeFps = $appModeFps
+        AppModeId = $appModeId
+        AppSupportedModes = $appSupportedModes
         PresentedFps = $presentedFps
         MeasureFrames = $measureFrames
         ElapsedMeasureMs = $elapsedMeasureMs
@@ -382,11 +444,16 @@ function Run-Canonical120Trial {
         DistanceErrorPct = [math]::Round($distErrorPct, 2)
         DeltaSfFrames = $deltaSfFrames
         DroppedFrames = $deltaDropped
+        TargetLayer = if ($sfEnd.Found) { $sfEnd.LayerName } else { "N/A" }
         IsValid = $isValid
         ValidationReason = $validationReason
     }
 }
 
+# -----------------------------------------------------------------------------
+# STEP 7: Standalone 120Hz Benchmark (5 Trials)
+# -----------------------------------------------------------------------------
+Write-Host "`n[6/8] Executing Canonical 120Hz Standalone Benchmark (5 Trials)..." -ForegroundColor Yellow
 $standaloneTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
 for ($t = 1; $t -le 5; $t++) {
     $r = Run-Canonical120Trial -trialNum $t -conditionName "Standalone_120Hz"
@@ -405,9 +472,9 @@ $stdValidCount = ($standaloneTrials | Where-Object { $_.IsValid }).Count
 Write-Host "  [OK] Standalone 120Hz Results: Median Choreo=${stdMedianChoreo} FPS, Median Presented=${stdMedianPresented} FPS ($stdValidCount/5 Valid)" -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
-# STEP 6: Real Host Embedded 120Hz Benchmark (Same Session, 5 Trials)
+# STEP 8: Real Host Embedded 120Hz Benchmark (Same Session, 5 Trials)
 # -----------------------------------------------------------------------------
-Write-Host "`n[6/7] Launching Real TabletDroid.Host (Same Session) & Executing Embedded 120Hz Benchmark (5 Trials)..." -ForegroundColor Yellow
+Write-Host "`n[7/8] Launching Real TabletDroid.Host (Same Session) & Executing Embedded 120Hz Benchmark (5 Trials)..." -ForegroundColor Yellow
 
 $hostCsproj = "$rootDir\host\TabletDroid.Host\TabletDroid.Host.csproj"
 $dotnetExe = "C:\Users\o1o6o\AppData\Local\Microsoft\dotnet\dotnet.exe"
@@ -466,105 +533,124 @@ if (-not $hostProc.HasExited) {
 Write-Host "  [OK] Real Host Embedded 120Hz Results: Median Choreo=${embMedianChoreo} FPS, Median Presented=${embMedianPresented} FPS ($embValidCount/5 Valid)" -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
-# STEP 7: Decision Tree Classification & Report Generation
+# STEP 9: Rigorous Decision Tree Classification
 # -----------------------------------------------------------------------------
-Write-Host "`n[7/7] Evaluating Feasibility Decision Tree & Generating Canonical Report..." -ForegroundColor Yellow
+Write-Host "`n[8/8] Evaluating 120Hz Break Decision Tree..." -ForegroundColor Yellow
 
 $decision = ""
 $decisionSummary = ""
-$decisionDetails = ""
+$breakLayer = ""
 
-if ($stdMedianChoreo -ge 114.0 -and $stdMedianPresented -ge 114.0) {
-    $decision = "FIXED 120HZ PASS"
-    $decisionSummary = "Both Android Guest Choreographer and Host SurfaceFlinger presentation achieve full ~120 FPS."
-    $decisionDetails = "The guest application and host compositor render at native 120Hz without pipeline throttling."
-} elseif ($stdMedianChoreo -ge 114.0 -and $stdMedianPresented -lt 70.0) {
-    $decision = "emulator/SF/host presentation cap [OPEN]"
-    $decisionSummary = "Guest Choreographer operates at ~120 FPS ($stdMedianChoreo FPS), but SurfaceFlinger / QEMU host presentation is throttled to ~60 FPS ($stdMedianPresented FPS)."
-    $decisionDetails = "Android app frame loop executes at 120Hz, but the QEMU pipe/ANGLE host swap interval or SurfaceFlinger composition pipeline caps presented frames to 60Hz."
-} elseif ($stdMedianChoreo -lt 70.0 -and $currentModeFps -match "120") {
-    $decision = "guest vsync/frame scheduling cap [OPEN]"
-    $decisionSummary = "DisplayManager reports 120Hz display mode ($currentModeFps), but Guest Choreographer frame scheduling remains capped at ~60 FPS ($stdMedianChoreo FPS)."
-    $decisionDetails = "The guest Android window manager exposes a 120Hz display mode, but Choreographer VSYNC pulses or render thread cadence are governed by a 60Hz hardware VSYNC source."
+if ($propQemuVsync -ne "120" -and $propKernelQemuVsync -ne "120" -and $propBootQemuVsync -ne "120") {
+    $decision = "emulator boot-property propagation break"
+    $breakLayer = "Emulator -> Guest qemu.vsync property (Prop: $propQemuVsync, boot: $propBootQemuVsync)"
+    $decisionSummary = "The emulator does not propagate hw.lcd.vsync=120 into guest system boot property ro.boot.qemu.vsync."
+} elseif ($sfDisplayRefreshRate -match "60" -or $sfVsyncPeriodNs -ge 16000000 -or $standaloneTrials[0].AppDisplayRefreshRate -lt 70.0) {
+    $decision = "guest composer/display-config break"
+    $breakLayer = "Guest DisplayManager/HWC -> SurfaceFlinger (SF Active Refresh: $sfDisplayRefreshRate, App Disp: $($standaloneTrials[0].AppDisplayRefreshRate) Hz)"
+    $decisionSummary = "DisplayManager exposes 120Hz mode, but SurfaceFlinger / HWC active display configuration remains at 60Hz (~16.6ms VSYNC period)."
+} elseif ($stdMedianChoreo -lt 70.0) {
+    $decision = "Android framework/app frame scheduling break"
+    $breakLayer = "SurfaceFlinger -> Choreographer / HWUI RenderThread"
+    $decisionSummary = "SurfaceFlinger operates at 120Hz, but Android Choreographer frame callback dispatch or VSYNC pulse delivery is throttled to 60 FPS."
+} elseif ($stdMedianPresented -lt 70.0) {
+    $decision = "presentation/compositor break"
+    $breakLayer = "Choreographer -> SurfaceFlinger / Host Swapchain Presentation"
+    $decisionSummary = "Guest Choreographer renders at ~120 FPS, but SurfaceFlinger / host swapchain presentation caps presented frames to ~60 FPS."
 } else {
-    $decision = "hw.lcd.vsync=120 not activated"
-    $decisionSummary = "DisplayManager itself remains at 60Hz ($currentModeFps) despite hw.lcd.vsync=120 configuration."
-    $decisionDetails = "The Android emulator build / display HAL does not respect hw.lcd.vsync=120 and defaults to 60Hz."
+    $decision = "FIXED 120HZ PASS"
+    $breakLayer = "NONE (120Hz End-to-End Verified)"
+    $decisionSummary = "Full 120 FPS cadence achieved across guest Choreographer and host SurfaceFlinger presentation."
 }
 
-# -----------------------------------------------------------------------------
+Write-Host "================================================================================" -ForegroundColor Cyan
+Write-Host " Feasibility Decision : $decision" -ForegroundColor Yellow
+Write-Host " Break Layer          : $breakLayer" -ForegroundColor Yellow
+Write-Host " Summary              : $decisionSummary" -ForegroundColor Gray
+Write-Host "================================================================================" -ForegroundColor Cyan
+
+# # -----------------------------------------------------------------------------
 # Markdown Report Generation
 # -----------------------------------------------------------------------------
 $reportPath = "$rootDir\docs\performance\fixed_120hz_feasibility.md"
 $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 
 $md = [System.Collections.Generic.List[string]]::new()
-$md.Add('# TabletDroid Fixed 120Hz Feasibility Spike Characterization Report')
+$md.Add('# TabletDroid Fixed 120Hz Feasibility & VSYNC Break Characterization Report')
 $md.Add('')
-$md.Add("- **Date / Timestamp**: $timestamp")
+$md.Add('- **Date / Timestamp**: ' + $timestamp)
 $md.Add('- **Target Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)')
 $md.Add('- **Target OS**: Windows 11 Home 23H2 (Hypervisor: WHPX)')
-$md.Add("- **Host Physical Panel**: ${winResW}x${winResH} @ ${winRefreshRate} Hz")
+$md.Add('- **Host Physical Panel**: ' + $winResW + 'x' + $winResH + ' @ ' + $winRefreshRate + ' Hz')
 $md.Add('- **Target AVD Configuration**: `hw.lcd.vsync = 120`, `hw.gpu.mode = host`, `hw.gltransport = pipe`, `-no-snapshot`, `-no-snapshot-save`')
-$md.Add("- **Emulator Session Lifecycle**: Cold Boot Clean PID: $newPids (Terminated Old PID: $oldPids)")
-$md.Add('')
-$md.Add('> [!IMPORTANT]')
-$md.Add('> **Historical Correction**: Previous informal Decision D (hw.lcd.vsync=120 Ineffective) is hereby **SUPERSEDED / INVALIDATED**. The previous probe concluded guest display remained 60Hz due to unparsed SurfaceFlinger output. The canonical probe now directly isolates both **DisplayManager Mode**, **Guest Choreographer Rate**, and **SurfaceFlinger Presentation Cadence** with strict fail-closed validity gates.')
+$md.Add('- **Emulator Session Lifecycle**: Cold Boot Clean PID: ' + $newPids + ' (Terminated Old PID: ' + $oldPids + ')')
 $md.Add('')
 $md.Add('---')
 $md.Add('')
-$md.Add('## 1. Executive Summary & Feasibility Decision Matrix')
+$md.Add('## 1. Executive Summary & Multi-Layer Telemetry Matrix')
 $md.Add('')
-$md.Add('| Feasibility Metric | Acceptance Criteria | Measured Value | Evaluation |')
+$md.Add('| Pipeline Layer | Subsystem / Property | Measured Value | Evaluation |')
 $md.Add('| :--- | :--- | :---: | :---: |')
-$md.Add("| **Host Physical Refresh Rate** | Windows display running at 120 Hz | **${winRefreshRate} Hz** | **PASS** |")
-$modeEval = if ($currentModeFps -match '120') { '**PASS (120Hz Exposed)**' } else { '**60Hz Only**' }
-$md.Add("| **DisplayManager Current Mode** | Android reports 120 Hz active display mode | **$currentModeFps** | $modeEval |")
-$suppEval = if ($supportedModes -match '120') { '**PASS (120Hz)**' } else { '**60Hz Only**' }
-$md.Add("| **DisplayManager Supported Modes** | QEMU display HAL exposes 120 Hz modes | **$supportedModes** | $suppEval |")
-$md.Add("| **SurfaceFlinger displayRefreshRate** | SurfaceFlinger internal mode tracking | **$sfDisplayRefreshRate** | **$sfDisplayRefreshRate** |")
-$choreoEval = if ($stdMedianChoreo -ge 114.0) { '**120 FPS PASS**' } else { '**~60 FPS CAPPED**' }
-$md.Add("| **Guest Choreographer Cadence (Standalone)** | Workload frame callback rate | **P50: $stdMedianChoreo FPS** | $choreoEval |")
-$presEval = if ($stdMedianPresented -ge 114.0) { '**120 FPS PASS**' } else { '**~60 FPS CAPPED**' }
-$md.Add("| **Presented FPS (Standalone)** | Canonical SurfaceFlinger Presented FPS | **P50: $stdMedianPresented FPS** | $presEval |")
-$embChoreoEval = if ($embMedianChoreo -ge 114.0) { '**120 FPS PASS**' } else { '**~60 FPS CAPPED**' }
-$md.Add("| **Guest Choreographer Cadence (Embedded)** | Host SetParent frame callback rate | **P50: $embMedianChoreo FPS** | $embChoreoEval |")
-$embPresEval = if ($embMedianPresented -ge 114.0) { '**120 FPS PASS**' } else { '**~60 FPS CAPPED**' }
-$md.Add("| **Presented FPS (Embedded)** | Host SetParent Presented FPS | **P50: $embMedianPresented FPS** | $embPresEval |")
+$md.Add('| **Layer A: AVD Config** | `hw.lcd.vsync` in `config.ini` | **' + $readLcdVsync + '** | **PASS (Configured 120)** |')
+$qemuPropEval = if ($propBootQemuVsync -eq "120" -or $propKernelQemuVsync -eq "120" -or $propQemuVsync -eq "120") { '**PASS (120)**' } else { '**N/A / NOT_PROPAGATED**' }
+$md.Add('| **Layer B: Guest Boot Prop** | `ro.boot.qemu.vsync` | **' + $propBootQemuVsync + '** (qemu.vsync: `' + $propQemuVsync + '`) | ' + $qemuPropEval + ' |')
+$dmModeEval = if ($dmCurrentModeFps -match '120') { '**PASS (120Hz Exposed)**' } else { '**60Hz Only**' }
+$md.Add('| **Layer C: DisplayManager** | `mCurrentDisplayMode` | **' + $dmCurrentModeFps + '** | ' + $dmModeEval + ' |')
+$suppEval = if ($dmSupportedModes -match '120') { '**PASS (120Hz)**' } elseif ($dmSupportedModes -match 'PARSE') { '**N/A**' } else { '**60Hz Only**' }
+$md.Add('| **Layer C: Supported Modes** | `dumpsys display` Modes | **' + $dmSupportedModes + '** | ' + $suppEval + ' |')
+$sfEval = if ($sfDisplayRefreshRate -match '120') { '**120 Hz**' } elseif ($sfDisplayRefreshRate -match 'PARSE') { '**N/A**' } else { '**' + $sfDisplayRefreshRate + '**' }
+$appAppEval = if ($stdMedianChoreo -ge 114.0) { '**120 FPS PASS**' } else { '**~60 FPS CAPPED**' }
+$appDispEval = if ($standaloneTrials[0].AppDisplayRefreshRate -ge 120) { '**120Hz**' } else { '**60Hz**' }
+$md.Add('| **Layer E/F: App Display** | `Display.getRefreshRate()` | **' + $standaloneTrials[0].AppDisplayRefreshRate + ' Hz** (Mode: ' + $standaloneTrials[0].AppModeFps + ' Hz) | ' + $appDispEval + ' |')
+$md.Add('| **Layer G: Guest Choreographer** | Workload frame callback cadence | **P50: ' + $stdMedianChoreo + ' FPS** (Standalone) / **' + $embMedianChoreo + ' FPS** (Embedded) | ' + $appAppEval + ' |')
+$md.Add('| **Layer H: SF Presented FPS** | Canonical Presented Throughput | **P50: ' + $stdMedianPresented + ' FPS** (Standalone) / **' + $embMedianPresented + ' FPS** (Embedded) | ' + $appAppEval + ' |')
 $gateEval = if ($stdValidCount -eq 5 -and $embValidCount -eq 5) { '**5/5 VALID**' } else { '**INCONCLUSIVE**' }
-$md.Add("| **Canonical Trial Validity** | 5/5 Valid (Workload 1.0.0, Distance +- 10%) | **Standalone: $stdValidCount/5, Embedded: $embValidCount/5** | $gateEval |")
+$md.Add('| **Canonical Validity Gate** | 5/5 Valid (Workload 1.0.0, Distance +- 10%, SF Layer Found) | **Standalone: ' + $stdValidCount + '/5, Embedded: ' + $embValidCount + '/5** | ' + $gateEval + ' |')
 $md.Add('')
-$md.Add("### Architectural Decision: **$decision**")
-$md.Add("> **Finding**: $decisionSummary")
-$md.Add("> **Technical Mechanism**: $decisionDetails")
+$md.Add('### Architectural Decision: **' + $decision + '**')
+$md.Add('> **Break Location**: `' + $breakLayer + '`')
+$md.Add('> **Finding**: ' + $decisionSummary)
 $md.Add('')
 $md.Add('---')
 $md.Add('')
-$md.Add('## 2. [MEASURED] Canonical 120Hz Standalone Benchmark Trials')
+$md.Add('## 2. [MEASURED] Platform & Display Subsystem Environment')
 $md.Add('')
-$md.Add('| Trial | Condition | Guest Choreographer | SF Presented FPS | Measure Frames | Actual Distance | Distance Error | Duration | Status |')
-$md.Add('| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |')
+$md.Add('| Property | Key | Value |')
+$md.Add('| :--- | :--- | :--- |')
+$md.Add('| **Hardware Composer HAL** | `ro.hardware.hwcomposer` | **' + $hwComposer + '** |')
+$md.Add('| **Android API Level** | `ro.build.version.sdk` | **' + $apiLevel + '** |')
+$md.Add('| **Build Fingerprint** | `ro.build.fingerprint` | `' + $buildFingerprint + '` |')
+$md.Add('| **Raw VSYNC Properties** | `getprop | grep vsync` | `' + $propAllVsync + '` |')
+$md.Add('')
+$md.Add('---')
+$md.Add('')
+$md.Add('## 3. [MEASURED] Canonical 120Hz Standalone Benchmark Trials (5 Trials)')
+$md.Add('')
+$md.Add('| Trial | Condition | Guest Choreographer | SF Presented FPS | App Disp Refresh | Measure Frames | Actual Distance | Distance Error | Dropped | Duration | Status |')
+$md.Add('| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |')
 
 foreach ($r in $standaloneTrials) {
-    $md.Add("| Trial $($r.Trial) | $($r.Condition) | **$($r.GuestChoreographerRate) FPS** | **$($r.PresentedFps) FPS** | $($r.MeasureFrames) | $([math]::Round($r.ActualDistance, 0)) px | $($r.DistanceErrorPct)% | $($r.ActualDurationSec)s | **$($r.ValidationReason)** |")
+    $line = '| Trial ' + $r.Trial + ' | ' + $r.Condition + ' | **' + $r.GuestChoreographerRate + ' FPS** | **' + $r.PresentedFps + ' FPS** | ' + $r.AppDisplayRefreshRate + ' Hz | ' + $r.MeasureFrames + ' | ' + [math]::Round($r.ActualDistance, 0) + ' px | ' + $r.DistanceErrorPct + '% | ' + $r.DroppedFrames + ' | ' + $r.ActualDurationSec + 's | **' + $r.ValidationReason + '** |'
+    $md.Add($line)
 }
 
 $md.Add('')
 $md.Add('---')
 $md.Add('')
-$md.Add('## 3. [MEASURED] Canonical 120Hz Real Host Embedded Benchmark Trials')
+$md.Add('## 4. [MEASURED] Canonical 120Hz Real Host Embedded Benchmark Trials (5 Trials)')
 $md.Add('')
-$md.Add('| Trial | Condition | Guest Choreographer | SF Presented FPS | Measure Frames | Actual Distance | Distance Error | Duration | Status |')
-$md.Add('| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |')
+$md.Add('| Trial | Condition | Guest Choreographer | SF Presented FPS | App Disp Refresh | Measure Frames | Actual Distance | Distance Error | Dropped | Duration | Status |')
+$md.Add('| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |')
 
 foreach ($r in $embeddedTrials) {
-    $md.Add("| Trial $($r.Trial) | $($r.Condition) | **$($r.GuestChoreographerRate) FPS** | **$($r.PresentedFps) FPS** | $($r.MeasureFrames) | $([math]::Round($r.ActualDistance, 0)) px | $($r.DistanceErrorPct)% | $($r.ActualDurationSec)s | **$($r.ValidationReason)** |")
+    $line = '| Trial ' + $r.Trial + ' | ' + $r.Condition + ' | **' + $r.GuestChoreographerRate + ' FPS** | **' + $r.PresentedFps + ' FPS** | ' + $r.AppDisplayRefreshRate + ' Hz | ' + $r.MeasureFrames + ' | ' + [math]::Round($r.ActualDistance, 0) + ' px | ' + $r.DistanceErrorPct + '% | ' + $r.DroppedFrames + ' | ' + $r.ActualDurationSec + 's | **' + $r.ValidationReason + '** |'
+    $md.Add($line)
 }
 
 $md.Add('')
 $md.Add('---')
 $md.Add('')
-$md.Add('## 4. [OPEN / FUTURE] Variable Refresh Rate (VRR / Adaptive-Sync) Characterization')
+$md.Add('## 5. [OPEN / FUTURE] Variable Refresh Rate (VRR / Adaptive-Sync) Characterization')
 $md.Add('')
 $md.Add('> [!NOTE]')
 $md.Add('> **Status: [OPEN / FUTURE]**')
@@ -572,9 +658,9 @@ $md.Add('> Dynamic Variable Refresh Rate (VRR / NVIDIA G-Sync / AMD FreeSync / V
 $md.Add('')
 $md.Add('---')
 $md.Add('')
-$md.Add('## 5. [DECISION] Conclusion & Summary')
-$md.Add('1. **Production 60Hz Characterization**: Fully verified, locked, and closed at **5/5 VALID (59.27 FPS baseline)**.')
-$md.Add("2. **Fixed 120Hz Spike**: Evaluated under canonical conditions with clean emulator cold boot and dual-layer cadence telemetry, categorized as **$decision**.")
+$md.Add('## 6. [DECISION] Conclusion & Summary')
+$md.Add('1. **Production 60Hz Baseline**: Locked and verified at **5/5 VALID (59.27 FPS baseline)**. Throughput, graphics transport (`pipe`), and SetParent embedding architecture are **[CLOSED]**.')
+$md.Add('2. **Fixed 120Hz VSYNC Break**: Directly identified and isolated as **' + $decision + '** at layer `' + $breakLayer + '`.')
 $md.Add('3. **Next Steps**: Retain stable 60Hz production configuration (`hw.gpu.mode=host`, `hw.gltransport=pipe`) for v0.1 release.')
 
 [System.IO.File]::WriteAllLines($reportPath, $md, [System.Text.Encoding]::UTF8)

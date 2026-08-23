@@ -1,62 +1,70 @@
-﻿# TabletDroid Fixed 120Hz Feasibility Spike Characterization Report
+﻿# TabletDroid Fixed 120Hz Feasibility & VSYNC Break Characterization Report
 
-- **Date / Timestamp**: 2026-08-23 16:55:14
+- **Date / Timestamp**: 2026-08-23 17:37:22
 - **Target Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **Target OS**: Windows 11 Home 23H2 (Hypervisor: WHPX)
 - **Host Physical Panel**: 1920x1200 @ 120 Hz
 - **Target AVD Configuration**: `hw.lcd.vsync = 120`, `hw.gpu.mode = host`, `hw.gltransport = pipe`, `-no-snapshot`, `-no-snapshot-save`
-- **Emulator Session Lifecycle**: Cold Boot Clean PID: 42396,38884 (Terminated Old PID: NONE)
-
-> [!IMPORTANT]
-> **Historical Correction**: Previous informal Decision D (hw.lcd.vsync=120 Ineffective) is hereby **SUPERSEDED / INVALIDATED**. The previous probe concluded guest display remained 60Hz due to unparsed SurfaceFlinger output. The canonical probe now directly isolates both **DisplayManager Mode**, **Guest Choreographer Rate**, and **SurfaceFlinger Presentation Cadence** with strict fail-closed validity gates.
+- **Emulator Session Lifecycle**: Cold Boot Clean PID: 17316,27528 (Terminated Old PID: NONE)
 
 ---
 
-## 1. Executive Summary & Feasibility Decision Matrix
+## 1. Executive Summary & Multi-Layer Telemetry Matrix
 
-| Feasibility Metric | Acceptance Criteria | Measured Value | Evaluation |
+| Pipeline Layer | Subsystem / Property | Measured Value | Evaluation |
 | :--- | :--- | :---: | :---: |
-| **Host Physical Refresh Rate** | Windows display running at 120 Hz | **120 Hz** | **PASS** |
-| **DisplayManager Current Mode** | Android reports 120 Hz active display mode | **120 Hz** | **PASS (120Hz Exposed)** |
-| **DisplayManager Supported Modes** | QEMU display HAL exposes 120 Hz modes | **N/A / PARSE_UNAVAILABLE** | **60Hz Only** |
-| **SurfaceFlinger displayRefreshRate** | SurfaceFlinger internal mode tracking | **60 Hz** | **60 Hz** |
-| **Guest Choreographer Cadence (Standalone)** | Workload frame callback rate | **P50: 60 FPS** | **~60 FPS CAPPED** |
-| **Presented FPS (Standalone)** | Canonical SurfaceFlinger Presented FPS | **P50: 57.88 FPS** | **~60 FPS CAPPED** |
-| **Guest Choreographer Cadence (Embedded)** | Host SetParent frame callback rate | **P50: 60 FPS** | **~60 FPS CAPPED** |
-| **Presented FPS (Embedded)** | Host SetParent Presented FPS | **P50: 57.83 FPS** | **~60 FPS CAPPED** |
-| **Canonical Trial Validity** | 5/5 Valid (Workload 1.0.0, Distance +- 10%) | **Standalone: 5/5, Embedded: 5/5** | **5/5 VALID** |
+| **Layer A: AVD Config** | `hw.lcd.vsync` in `config.ini` | **120** | **PASS (Configured 120)** |
+| **Layer B: Guest Boot Prop** | `ro.boot.qemu.vsync` | **120** (qemu.vsync: `N/A`) | **PASS (120)** |
+| **Layer C: DisplayManager** | `mCurrentDisplayMode` | **120 Hz** | **PASS (120Hz Exposed)** |
+| **Layer C: Supported Modes** | `dumpsys display` Modes | **N/A / PARSE_UNAVAILABLE** | **N/A** |
+| **Layer E/F: App Display** | `Display.getRefreshRate()` | **60 Hz** (Mode: 120 Hz) | **60Hz** |
+| **Layer G: Guest Choreographer** | Workload frame callback cadence | **P50: 60 FPS** (Standalone) / **60 FPS** (Embedded) | **~60 FPS CAPPED** |
+| **Layer H: SF Presented FPS** | Canonical Presented Throughput | **P50: 57.81 FPS** (Standalone) / **57.85 FPS** (Embedded) | **~60 FPS CAPPED** |
+| **Canonical Validity Gate** | 5/5 Valid (Workload 1.0.0, Distance +- 10%, SF Layer Found) | **Standalone: 5/5, Embedded: 5/5** | **5/5 VALID** |
 
-### Architectural Decision: **guest vsync/frame scheduling cap [OPEN]**
-> **Finding**: DisplayManager reports 120Hz display mode (120 Hz), but Guest Choreographer frame scheduling remains capped at ~60 FPS (60 FPS).
-> **Technical Mechanism**: The guest Android window manager exposes a 120Hz display mode, but Choreographer VSYNC pulses or render thread cadence are governed by a 60Hz hardware VSYNC source.
-
----
-
-## 2. [MEASURED] Canonical 120Hz Standalone Benchmark Trials
-
-| Trial | Condition | Guest Choreographer | SF Presented FPS | Measure Frames | Actual Distance | Distance Error | Duration | Status |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Trial 1 | Standalone_120Hz | **60 FPS** | **58.18 FPS** | 1801 | 24013 px | 0.05% | 30.01s | **VALID** |
-| Trial 2 | Standalone_120Hz | **60 FPS** | **57.88 FPS** | 1800 | 24000 px | 0% | 30.01s | **VALID** |
-| Trial 3 | Standalone_120Hz | **60 FPS** | **57.79 FPS** | 1800 | 24000 px | 0% | 30.01s | **VALID** |
-| Trial 4 | Standalone_120Hz | **60 FPS** | **57.9 FPS** | 1800 | 24000 px | 0% | 30s | **VALID** |
-| Trial 5 | Standalone_120Hz | **60 FPS** | **57.8 FPS** | 1800 | 24000 px | 0% | 30s | **VALID** |
+### Architectural Decision: **guest composer/display-config break**
+> **Break Location**: `Guest DisplayManager/HWC -> SurfaceFlinger (SF Active Refresh: 60 Hz, App Disp: 60 Hz)`
+> **Finding**: DisplayManager exposes 120Hz mode, but SurfaceFlinger / HWC active display configuration remains at 60Hz (~16.6ms VSYNC period).
 
 ---
 
-## 3. [MEASURED] Canonical 120Hz Real Host Embedded Benchmark Trials
+## 2. [MEASURED] Platform & Display Subsystem Environment
 
-| Trial | Condition | Guest Choreographer | SF Presented FPS | Measure Frames | Actual Distance | Distance Error | Duration | Status |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Trial 1 | Host_Embedded_120Hz | **60 FPS** | **57.89 FPS** | 1800 | 24000 px | 0% | 30.01s | **VALID** |
-| Trial 2 | Host_Embedded_120Hz | **59.96 FPS** | **57.79 FPS** | 1799 | 24000 px | 0% | 30s | **VALID** |
-| Trial 3 | Host_Embedded_120Hz | **60 FPS** | **57.82 FPS** | 1800 | 24000 px | 0% | 30s | **VALID** |
-| Trial 4 | Host_Embedded_120Hz | **60.03 FPS** | **57.91 FPS** | 1801 | 24013 px | 0.05% | 30.01s | **VALID** |
-| Trial 5 | Host_Embedded_120Hz | **60 FPS** | **57.83 FPS** | 1800 | 24000 px | 0% | 30s | **VALID** |
+| Property | Key | Value |
+| :--- | :--- | :--- |
+| **Hardware Composer HAL** | `ro.hardware.hwcomposer` | **N/A** |
+| **Android API Level** | `ro.build.version.sdk` | **34** |
+| **Build Fingerprint** | `ro.build.fingerprint` | `google/sdk_gphone64_x86_64/emu64xa:14/UE1A.230829.036.A4/12096271:user/release-keys` |
+| **Raw VSYNC Properties** | `getprop | grep vsync` | `[debug.sf.vsync_reactor_ignore_present_fences]: [true]
+[ro.boot.qemu.vsync]: [120]` |
 
 ---
 
-## 4. [OPEN / FUTURE] Variable Refresh Rate (VRR / Adaptive-Sync) Characterization
+## 3. [MEASURED] Canonical 120Hz Standalone Benchmark Trials (5 Trials)
+
+| Trial | Condition | Guest Choreographer | SF Presented FPS | App Disp Refresh | Measure Frames | Actual Distance | Distance Error | Dropped | Duration | Status |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Trial 1 | Standalone_120Hz | **60 FPS** | **57.71 FPS** | 60 Hz | 1801 | 24013 px | 0.05% | 0 | 30.01s | **VALID** |
+| Trial 2 | Standalone_120Hz | **60 FPS** | **57.81 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+| Trial 3 | Standalone_120Hz | **60 FPS** | **57.81 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+| Trial 4 | Standalone_120Hz | **60 FPS** | **57.87 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+| Trial 5 | Standalone_120Hz | **59.99 FPS** | **57.82 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+
+---
+
+## 4. [MEASURED] Canonical 120Hz Real Host Embedded Benchmark Trials (5 Trials)
+
+| Trial | Condition | Guest Choreographer | SF Presented FPS | App Disp Refresh | Measure Frames | Actual Distance | Distance Error | Dropped | Duration | Status |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| Trial 1 | Host_Embedded_120Hz | **60 FPS** | **57.82 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30s | **VALID** |
+| Trial 2 | Host_Embedded_120Hz | **60 FPS** | **57.85 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+| Trial 3 | Host_Embedded_120Hz | **60 FPS** | **57.89 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30s | **VALID** |
+| Trial 4 | Host_Embedded_120Hz | **60 FPS** | **57.88 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+| Trial 5 | Host_Embedded_120Hz | **60 FPS** | **57.82 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+
+---
+
+## 5. [OPEN / FUTURE] Variable Refresh Rate (VRR / Adaptive-Sync) Characterization
 
 > [!NOTE]
 > **Status: [OPEN / FUTURE]**
@@ -64,7 +72,7 @@
 
 ---
 
-## 5. [DECISION] Conclusion & Summary
-1. **Production 60Hz Characterization**: Fully verified, locked, and closed at **5/5 VALID (59.27 FPS baseline)**.
-2. **Fixed 120Hz Spike**: Evaluated under canonical conditions with clean emulator cold boot and dual-layer cadence telemetry, categorized as **guest vsync/frame scheduling cap [OPEN]**.
+## 6. [DECISION] Conclusion & Summary
+1. **Production 60Hz Baseline**: Locked and verified at **5/5 VALID (59.27 FPS baseline)**. Throughput, graphics transport (`pipe`), and SetParent embedding architecture are **[CLOSED]**.
+2. **Fixed 120Hz VSYNC Break**: Directly identified and isolated as **guest composer/display-config break** at layer `Guest DisplayManager/HWC -> SurfaceFlinger (SF Active Refresh: 60 Hz, App Disp: 60 Hz)`.
 3. **Next Steps**: Retain stable 60Hz production configuration (`hw.gpu.mode=host`, `hw.gltransport=pipe`) for v0.1 release.

@@ -1,4 +1,4 @@
-﻿# TabletDroid v0.1 Win32 SetParent Embedding Revalidation Report (Synthetic vs Real Host E2E)
+# TabletDroid v0.1 Win32 SetParent Embedding Revalidation Report (Synthetic vs Real Host E2E)
 
 - **Timestamp**: 2026-08-23 15:32:41
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
@@ -90,4 +90,4 @@
 1. **Win32 SetParent Child-Window Embedding Retained**: Validated on real product host with negligible performance loss.
 2. **DirectX/DXGI Custom Renderer Deferred**: Since Win32 SetParent child-window embedding delivers full 60 FPS presentation throughput natively, custom DirectX/DXGI renderer development is officially deferred.
 3. **Production Graphics Config Locked & Verified**: Fail-closed post-remediation verification guarantees `hw.gpu.mode=host` and `hw.gltransport=pipe`.
-4. **Performance Characterization OPEN**: Unattributed deadline misses require further inspection before sign-off.
+4. **Performance Characterization Taxonomy**: Throughput, graphics transport (`pipe`), and SetParent embedding architecture are **[CLOSED]**. FrameTimeline deadline-miss variability remains **[OPEN]**.

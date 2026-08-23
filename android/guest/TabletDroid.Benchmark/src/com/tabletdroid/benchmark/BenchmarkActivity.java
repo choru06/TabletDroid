@@ -10,12 +10,14 @@ import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Choreographer;
+import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import java.util.Locale;
 
 public class BenchmarkActivity extends Activity implements BenchmarkState.StateListener {
     private ScrollView scrollView;
@@ -328,8 +330,37 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
             elapsedMs = BenchmarkState.measureEndMs - BenchmarkState.measureStartMs;
         }
 
+        Display display = null;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            try {
+                display = getDisplay();
+            } catch (Throwable ignored) {}
+        }
+        if (display == null) {
+            try {
+                display = getWindowManager().getDefaultDisplay();
+            } catch (Throwable ignored) {}
+        }
+
+        float appDisplayRefreshRate = display != null ? display.getRefreshRate() : 0.0f;
+        Display.Mode activeMode = (display != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) ? display.getMode() : null;
+        float appModeFps = activeMode != null ? activeMode.getRefreshRate() : appDisplayRefreshRate;
+        int appModeId = activeMode != null ? activeMode.getModeId() : 0;
+
+        Display.Mode[] supportedModes = (display != null && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) ? display.getSupportedModes() : null;
+        StringBuilder modesSb = new StringBuilder("[");
+        if (supportedModes != null) {
+            for (int i = 0; i < supportedModes.length; i++) {
+                if (i > 0) modesSb.append(",");
+                Display.Mode m = supportedModes[i];
+                modesSb.append(String.format(Locale.US, "{\"id\":%d,\"width\":%d,\"height\":%d,\"fps\":%.2f}", m.getModeId(), m.getPhysicalWidth(), m.getPhysicalHeight(), m.getRefreshRate()));
+            }
+        }
+        modesSb.append("]");
+
         String json = String.format(
-            "{\"status\":\"%s\",\"workloadVersion\":\"%s\",\"requestedVelocity\":%.1f,\"actualDistance\":%.1f,\"warmupSec\":%d,\"measureSec\":%d,\"elapsedMeasureMs\":%d,\"measureFrames\":%d}",
+            Locale.US,
+            "{\"status\":\"%s\",\"workloadVersion\":\"%s\",\"requestedVelocity\":%.1f,\"actualDistance\":%.1f,\"warmupSec\":%d,\"measureSec\":%d,\"elapsedMeasureMs\":%d,\"measureFrames\":%d,\"appDisplayRefreshRate\":%.2f,\"appModeFps\":%.2f,\"appModeId\":%d,\"appSupportedModes\":%s}",
             BenchmarkState.currentStatus.name(),
             BenchmarkState.WORKLOAD_VERSION,
             BenchmarkState.requestedVelocityPxPerSec,
@@ -337,7 +368,11 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
             BenchmarkState.warmupDurationSec,
             BenchmarkState.measureDurationSec,
             elapsedMs,
-            BenchmarkState.measureFramesRendered
+            BenchmarkState.measureFramesRendered,
+            appDisplayRefreshRate,
+            appModeFps,
+            appModeId,
+            modesSb.toString()
         );
         Log.i(BenchmarkState.TAG, "BENCHMARK_STATUS_JSON: " + json);
     }
