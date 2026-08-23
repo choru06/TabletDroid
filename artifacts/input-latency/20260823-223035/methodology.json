@@ -1,0 +1,12 @@
+﻿{
+    "Terminology":  "Guest Synthetic Software Input-to-Frame Baseline",
+    "TrialProtocol":  "Counter-balanced AB / BA alternation",
+    "DragPerTrial":  10,
+    "SwipePerTrial":  10,
+    "TapPerTrial":  50,
+    "TotalTrials":  6,
+    "EmbeddingVerification":  "Fatal per-trial GET_GEOMETRY isEmbedded=true gate",
+    "StateReset":  "am force-stop + am start + 1.5s stabilization + logcat -c",
+    "AcceptanceStatus":  "PASS",
+    "SchemaVersion":  3
+}

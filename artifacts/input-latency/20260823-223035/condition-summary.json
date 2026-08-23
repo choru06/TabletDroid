@@ -1,0 +1,96 @@
+﻿{
+    "PooledStandalone":  {
+                             "Move":  {
+                                          "Metric":  "Pooled_MOVE_EventToDrawStart",
+                                          "Count":  3809,
+                                          "Min":  5.129,
+                                          "Max":  34.016,
+                                          "Mean":  6.839,
+                                          "StdDev":  1.606,
+                                          "P50":  6.474,
+                                          "P90":  8.231,
+                                          "P95":  9.026,
+                                          "P99":  12.748
+                                      },
+                             "Down":  {
+                                          "Metric":  "Pooled_DOWN_EventToDrawStart",
+                                          "Count":  420,
+                                          "Min":  0.744,
+                                          "Max":  62.846,
+                                          "Mean":  6.958,
+                                          "StdDev":  3.734,
+                                          "P50":  6.835,
+                                          "P90":  9.986,
+                                          "P95":  10.763,
+                                          "P99":  12.396
+                                      }
+                         },
+    "EmbeddedAcrossTrials":  {
+                                 "Condition":  "Host_Embedded_SetParent",
+                                 "TrialCount":  6,
+                                 "Down_P50_Median":  6.528,
+                                 "Down_P50_Mean":  6.544,
+                                 "Down_P95_Median":  10.511,
+                                 "Down_P99_Median":  11.046,
+                                 "Move_P50_Median":  6.408,
+                                 "Move_P50_Mean":  6.392,
+                                 "Move_P95_Median":  8.638,
+                                 "Move_P99_Median":  11.591,
+                                 "Down_Dispatch_P50_Median":  1,
+                                 "Down_Dispatch_P95_Median":  1,
+                                 "Down_DispatchToCallback_P50_Median":  5.729,
+                                 "Down_DrawContentDuration_P50_Median":  0.008
+                             },
+    "Timestamp":  "20260823-223035",
+    "OrderEffect":  {
+                        "StandaloneSecondMeanP50":  6.896,
+                        "EmbeddedSecondMeanP50":  6.753,
+                        "StandaloneOrderDelta":  0.212,
+                        "EmbeddedOrderDelta":  0.417,
+                        "StandaloneFirstMeanP50":  6.684,
+                        "EmbeddedFirstMeanP50":  6.336
+                    },
+    "PooledEmbedded":  {
+                           "Move":  {
+                                        "Metric":  "Pooled_MOVE_EventToDrawStart",
+                                        "Count":  3889,
+                                        "Min":  5.131,
+                                        "Max":  26.233,
+                                        "Mean":  6.647,
+                                        "StdDev":  1.339,
+                                        "P50":  6.377,
+                                        "P90":  7.779,
+                                        "P95":  8.577,
+                                        "P99":  11.794
+                                    },
+                           "Down":  {
+                                        "Metric":  "Pooled_DOWN_EventToDrawStart",
+                                        "Count":  420,
+                                        "Min":  0.949,
+                                        "Max":  12.002,
+                                        "Mean":  6.681,
+                                        "StdDev":  2.507,
+                                        "P50":  6.612,
+                                        "P90":  10.025,
+                                        "P95":  10.562,
+                                        "P99":  11.405
+                                    }
+                       },
+    "StandaloneAcrossTrials":  {
+                                   "Condition":  "Standalone_Emulator",
+                                   "TrialCount":  6,
+                                   "Down_P50_Median":  6.925,
+                                   "Down_P50_Mean":  6.79,
+                                   "Down_P95_Median":  10.328,
+                                   "Down_P99_Median":  11.488,
+                                   "Move_P50_Median":  6.464,
+                                   "Move_P50_Mean":  6.506,
+                                   "Move_P95_Median":  8.852,
+                                   "Move_P99_Median":  12.614,
+                                   "Down_Dispatch_P50_Median":  1,
+                                   "Down_Dispatch_P95_Median":  1.5,
+                                   "Down_DispatchToCallback_P50_Median":  5.927,
+                                   "Down_DrawContentDuration_P50_Median":  0.01
+                               },
+    "TrialCount":  6
+}
