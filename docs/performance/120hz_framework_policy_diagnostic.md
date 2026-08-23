@@ -1,6 +1,6 @@
 ﻿# TabletDroid 120Hz Framework Refresh-Rate Policy Diagnostic Report
 
-- **Date / Timestamp**: 2026-08-23 19:25:30
+- **Date / Timestamp**: 2026-08-23 19:51:12
 - **Target Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **Target OS**: Windows 11 Home 23H2 (Hypervisor: WHPX)
 - **Host Physical Panel**: 1920x1200 @ 120 Hz
@@ -15,10 +15,10 @@
 | **Layer A: AVD Config** | `hw.lcd.vsync` | **120** | **120** | Configured 120 |
 | **Layer B: Guest Boot Prop** | `ro.boot.qemu.vsync` | **120** | **120** | [MEASURED] ro.boot=120, ro.kernel=N/A |
 | **Layer C: DisplayManager** | `mCurrentDisplayMode` | 120 Hz | 120 Hz | 120Hz Mode Active |
-| **Layer D: Framework Policy** | `system.peak_refresh_rate` / `min_refresh_rate` | `120.0` | `120.0` | Applied & Verified |
+| **Layer D: Framework Policy** | `system.peak_refresh_rate` / `min_refresh_rate` | `UNSET (default)` | `120.0` | Applied & Verified |
 | **Layer E: App Display Mode** | `Display.getMode().getRefreshRate()` | 120 Hz | 120 Hz | 120Hz Mode Active |
-| **Layer F: App Refresh Rate** | `Display.getRefreshRate()` | 120 Hz | **120 Hz** | **120 Hz Unlocked** |
-| **Layer G: Guest Choreographer** | Workload frame callback cadence | 116.89 FPS | **119.99 FPS** | **120 FPS Render Cadence** |
+| **Layer F: App Refresh Rate** | `Display.getRefreshRate()` | 60 Hz | **120 Hz** | **120 Hz Unlocked** |
+| **Layer G: Guest Choreographer** | Workload frame callback cadence | 58.61 FPS | **119.08 FPS** | **120 FPS Render Cadence** |
 
 ### Architectural Decision: **FRAMEWORK REFRESH POLICY ROOT CAUSE PROVEN**
 > **Finding**: Applying system peak_refresh_rate=120 and min_refresh_rate=120 successfully unlocks full 120 FPS cadence in Android Choreographer and SurfaceFlinger.

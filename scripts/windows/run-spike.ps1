@@ -164,6 +164,10 @@ while ([DateTime]::UtcNow -lt $timeout) {
 if ($booted) {
     Write-Host "  [PASS] Android boot_completed = 1 on $deviceSerial" -ForegroundColor Green
     $results["Android Boot"] = "PASS"
+    & $adb -s $deviceSerial shell settings put global setup_wizard_has_run 1 2>$null
+    & $adb -s $deviceSerial shell settings put secure user_setup_complete 1 2>$null
+    & $adb -s $deviceSerial shell settings put global device_provisioned 1 2>$null
+    & $adb -s $deviceSerial shell input keyevent 82 2>$null
 } else {
     throw "[FATAL] Android boot_completed timed out."
 }
@@ -185,14 +189,18 @@ $results["Fullscreen Policy"] = "PASS"
 $rateVal = [double]$RefreshHz
 & $adb -s $deviceSerial shell settings put system peak_refresh_rate "${rateVal}.0" 2>$null
 & $adb -s $deviceSerial shell settings put system min_refresh_rate "${rateVal}.0" 2>$null
-& $adb -s $deviceSerial shell settings put global peak_refresh_rate "${rateVal}.0" 2>$null
-& $adb -s $deviceSerial shell settings put global min_refresh_rate "${rateVal}.0" 2>$null
 Start-Sleep -Seconds 1
 
-$rbPeakRaw = (& $adb -s $deviceSerial shell settings get system peak_refresh_rate 2>$null)
-$rbPeak = if ($rbPeakRaw) { ($rbPeakRaw | Out-String).Trim() } else { "UNKNOWN" }
-$rbMinRaw = (& $adb -s $deviceSerial shell settings get system min_refresh_rate 2>$null)
-$rbMin = if ($rbMinRaw) { ($rbMinRaw | Out-String).Trim() } else { "UNKNOWN" }
+$rbPeak = "UNKNOWN"
+$rbMin = "UNKNOWN"
+for ($rTry = 0; $rTry -lt 5; $rTry++) {
+    $rbPeakRaw = & $adb -s $deviceSerial shell settings get system peak_refresh_rate 2>$null
+    if ($rbPeakRaw) { $rbPeak = ($rbPeakRaw | Out-String).Trim() }
+    $rbMinRaw = & $adb -s $deviceSerial shell settings get system min_refresh_rate 2>$null
+    if ($rbMinRaw) { $rbMin = ($rbMinRaw | Out-String).Trim() }
+    if ($rbPeak -match "^$RefreshHz" -and $rbMin -match "^$RefreshHz") { break }
+    Start-Sleep -Milliseconds 500
+}
 
 if ($rbPeak -notmatch "^$RefreshHz" -or $rbMin -notmatch "^$RefreshHz") {
     throw "[FATAL] Framework refresh rate policy verification failed! (peak='$rbPeak', min='$rbMin', expected='$rateVal')"

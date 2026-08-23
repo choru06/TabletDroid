@@ -125,6 +125,13 @@ function Boot-CleanEmulator {
     Invoke-AdbSilent "shell `"dumpsys SurfaceFlinger --timestats -enable`"" | Out-Null
     Invoke-AdbSilent "shell `"dumpsys SurfaceFlinger --timestats -clear`"" | Out-Null
 
+    # Decontaminate Settings for Control A (Unset all override policies)
+    Invoke-AdbSilent "shell settings delete system peak_refresh_rate" | Out-Null
+    Invoke-AdbSilent "shell settings delete system min_refresh_rate" | Out-Null
+    Invoke-AdbSilent "shell settings delete global peak_refresh_rate" | Out-Null
+    Invoke-AdbSilent "shell settings delete global min_refresh_rate" | Out-Null
+    Start-Sleep -Seconds 1
+
     return $emuProc
 }
 
@@ -202,6 +209,8 @@ function Measure-FrameworkTelemetry {
     Write-Host "  [$ConditionLabel Telemetry]" -ForegroundColor Cyan
     Write-Host "    Settings system.peak   : $peakSystem" -ForegroundColor Gray
     Write-Host "    Settings system.min    : $minSystem" -ForegroundColor Gray
+    Write-Host "    Settings global.peak   : $peakGlobal" -ForegroundColor Gray
+    Write-Host "    Settings global.min    : $minGlobal" -ForegroundColor Gray
     Write-Host "    DisplayManager Mode    : $dmCurrentMode" -ForegroundColor Gray
     Write-Host "    App Display.getMode()  : $appModeFps Hz" -ForegroundColor Gray
     Write-Host "    App Display.RefreshRate: $appRefresh Hz" -ForegroundColor Gray
@@ -228,9 +237,9 @@ function Measure-FrameworkTelemetry {
 }
 
 # -----------------------------------------------------------------------------
-# STEP 1: Control A (Standard Cold Boot, System Refresh Settings Default)
+# STEP 1: Control A (Standard Cold Boot, System Refresh Settings Default/Unset)
 # -----------------------------------------------------------------------------
-Write-Host "`n[1/4] Booting Clean Emulator for Control A (Default System Settings)..." -ForegroundColor Yellow
+Write-Host "`n[1/4] Booting Clean Emulator for Control A (Default Unset System Settings)..." -ForegroundColor Yellow
 $emuProc = Boot-CleanEmulator
 
 $hwComposer = Invoke-AdbOutput "shell getprop ro.hardware.hwcomposer"
@@ -244,14 +253,12 @@ Write-Host "  Android API Level     : $apiLevel" -ForegroundColor Cyan
 $controlA = Measure-FrameworkTelemetry -ConditionLabel "Control A (Default Policy)"
 
 # -----------------------------------------------------------------------------
-# STEP 2: Condition B (System Settings: peak_refresh_rate=120, min_refresh_rate=120)
+# STEP 2: Condition B (System Settings ONLY: peak_refresh_rate=120, min_refresh_rate=120)
 # -----------------------------------------------------------------------------
 Write-Host "`n[2/4] Applying Condition B: settings put system peak_refresh_rate=120, min_refresh_rate=120..." -ForegroundColor Yellow
 
 Invoke-AdbSilent "shell settings put system peak_refresh_rate 120.0" | Out-Null
 Invoke-AdbSilent "shell settings put system min_refresh_rate 120.0" | Out-Null
-Invoke-AdbSilent "shell settings put global peak_refresh_rate 120.0" | Out-Null
-Invoke-AdbSilent "shell settings put global min_refresh_rate 120.0" | Out-Null
 Start-Sleep -Seconds 3
 
 # Readback verification

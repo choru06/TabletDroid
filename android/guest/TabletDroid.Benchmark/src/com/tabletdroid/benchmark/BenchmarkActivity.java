@@ -116,13 +116,6 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
 
         populateDeterministicCards();
 
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-            android.view.WindowManager.LayoutParams params = getWindow().getAttributes();
-            params.preferredDisplayModeId = 1;
-            params.preferredRefreshRate = 120.0f;
-            getWindow().setAttributes(params);
-        }
-
         BenchmarkState.listener = this;
         Log.i(BenchmarkState.TAG, "BenchmarkActivity created and listener registered.");
 
@@ -325,14 +318,7 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
         Choreographer.getInstance().removeFrameCallback(frameCallback);
     }
 
-    private long lastUiUpdateMs = 0;
     private void updateUiProgress() {
-        long now = System.currentTimeMillis();
-        if (now - lastUiUpdateMs < 100 && BenchmarkState.currentStatus != BenchmarkState.Status.COMPLETE) {
-            return;
-        }
-        lastUiUpdateMs = now;
-
         long elapsedMs = 0;
         if (BenchmarkState.currentStatus == BenchmarkState.Status.WARMUP && BenchmarkState.warmupStartMs > 0) {
             elapsedMs = System.currentTimeMillis() - BenchmarkState.warmupStartMs;
