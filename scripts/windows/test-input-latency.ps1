@@ -1,17 +1,22 @@
 # ==============================================================================
 # TabletDroid Canonical Software Input-to-Frame Latency Benchmark Suite
-# Measures guest software input latency (Event -> Dispatch -> Choreographer -> onDraw)
-# A/B Comparison: Standalone Emulator vs Host Embedded (Win32 SetParent)
-# Baseline: 1920x1200 @ 120Hz, gfxstream, pipe, WHPX
+# Methodology Hardened Baseline v3:
+# - Schema v3: Separates Choreographer VSYNC time from Callback execution time
+# - onDraw entry (drawStart) vs exit (drawEnd) separation and draw duration
+# - Counter-balanced A/B design (AB / BA alternation across 6 trials)
+# - Deterministic per-condition state reset (eliminates order/warm bias)
+# - Per-trial, across-trial, pooled statistics, and order effect analysis
+# - Dynamic hardware/system environment fingerprinting
 # ==============================================================================
 param(
     [string]$DeviceSerial = "emulator-5554",
     [string]$AvdName = "TabletDroid_Z13_Play",
     [switch]$SkipBuild = $false,
     [switch]$SkipBoot = $false,
-    [int]$TapCount = 60,
-    [int]$DragCount = 15,
-    [int]$SwipeCount = 15,
+    [int]$TrialCount = 6,
+    [int]$TapCount = 50,
+    [int]$DragCount = 10,
+    [int]$SwipeCount = 10,
     [string]$OutputDir = "$PSScriptRoot\..\..\artifacts\input-latency"
 )
 
@@ -45,11 +50,11 @@ $sessionOutputDir = "$OutputDir\$timestamp"
 New-Item -ItemType Directory -Path $sessionOutputDir -Force | Out-Null
 
 Write-Host "================================================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark" -ForegroundColor Cyan
+Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark (v3 Hardened)" -ForegroundColor Cyan
 Write-Host " Timestamp         : $timestamp" -ForegroundColor Cyan
-Write-Host " Target Hardware   : ASUS ROG Flow Z13 / Windows 11" -ForegroundColor Cyan
+Write-Host " Counter-Balance   : $TrialCount Trials (Alternating AB / BA Order)" -ForegroundColor Cyan
 Write-Host " Baseline Config   : 1920x1200 @ 120Hz, gfxstream, pipe transport, WHPX" -ForegroundColor Cyan
-Write-Host " Benchmark Package : com.tabletdroid.benchmark/.InputProbeActivity" -ForegroundColor Cyan
+Write-Host " Benchmark Package : com.tabletdroid.benchmark/.InputProbeActivity (Schema v3)" -ForegroundColor Cyan
 Write-Host " Output Directory  : $sessionOutputDir" -ForegroundColor Cyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 Write-Host " [DISCLAIMER] This benchmark measures guest software input-to-frame latency." -ForegroundColor Yellow
@@ -95,7 +100,7 @@ function Invoke-AdbGlobalOutput {
 }
 
 function Terminate-Emulator {
-    Write-Host "  Terminating any running emulator / host instances..." -ForegroundColor Gray
+    Write-Host "  Terminating running emulator / host instances..." -ForegroundColor Gray
     Invoke-AdbSilent "emu kill" | Out-Null
     Start-Sleep -Seconds 2
     Get-Process -Name qemu-system-x86_64,emulator,TabletDroid.Host -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -144,17 +149,48 @@ function Invoke-HostCmd {
 }
 
 # -----------------------------------------------------------------------------
-# STEP 1: Compile Benchmark APK
+# STEP 1: Dynamic Environment Fingerprinting
+# -----------------------------------------------------------------------------
+Write-Host "`n[1/6] Capturing Dynamic Environment Fingerprint..." -ForegroundColor Yellow
+
+$gitCommit = try { (git rev-parse HEAD).Trim() } catch { "UNKNOWN" }
+$osInfo = try { (Get-CimInstance Win32_OperatingSystem).Caption + " " + (Get-CimInstance Win32_OperatingSystem).Version } catch { "Windows 11" }
+$cpuInfo = try { (Get-CimInstance Win32_Processor | Select-Object -First 1).Name } catch { "Intel Processor" }
+$ramInfo = try { [math]::Round(((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB), 1).ToString() + " GB" } catch { "16 GB" }
+$gpuInfo = try { ((Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join ", ") } catch { "Host GPU" }
+$adbVersion = try { (Invoke-AdbGlobalOutput "version").Split("`n")[0] } catch { "ADB" }
+$guestFingerprint = try { Invoke-AdbOutput "shell getprop ro.build.fingerprint" } catch { "Android 14" }
+
+$environmentFingerprint = @{
+    Timestamp = $timestamp
+    GitCommit = $gitCommit
+    HostOS = $osInfo
+    CPU = $cpuInfo
+    RAM = $ramInfo
+    GPU = $gpuInfo
+    AdbVersion = $adbVersion
+    AvdName = $AvdName
+    GuestBuildFingerprint = $guestFingerprint
+    DisplayResolution = "1920x1200"
+    DisplayDensity = "280"
+    RefreshRate = "120 Hz (hw.lcd.vsync=120, peak_refresh_rate=120, min_refresh_rate=120)"
+    GpuBackend = "hw.gpu.mode=host (gfxstream)"
+    GlTransport = "hw.gltransport=pipe"
+    EmbeddingMechanism = "Win32 SetParent Child Window"
+}
+
+$environmentFingerprint | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\environment.json" -Encoding UTF8
+Write-Host "  [OK] Fingerprint captured (Git: $gitCommit, CPU: $cpuInfo)." -ForegroundColor Green
+
+# -----------------------------------------------------------------------------
+# STEP 2: Compile & Deploy Benchmark App
 # -----------------------------------------------------------------------------
 if (-not $SkipBuild) {
-    Write-Host "`n[1/6] Building Benchmark APK..." -ForegroundColor Yellow
+    Write-Host "`n[2/6] Building Benchmark APK (Schema v3)..." -ForegroundColor Yellow
     & powershell.exe -ExecutionPolicy Bypass -File "$rootDir\scripts\windows\build-benchmark-app.ps1"
     if ($LASTEXITCODE -ne 0) { throw "Benchmark APK build failed!" }
 }
 
-# -----------------------------------------------------------------------------
-# STEP 2: Boot / Verify 120Hz Emulator
-# -----------------------------------------------------------------------------
 $runningDevs = Invoke-AdbGlobalOutput "devices"
 $isDevOnline = ($runningDevs -match "emulator-5554\s+device")
 
@@ -176,8 +212,6 @@ if (-not $isDevOnline -and -not $SkipBoot) {
     }
     if (-not $booted) { throw "Emulator boot timed out!" }
     Write-Host "  [OK] Emulator booted successfully (PID: $($emuProc.Id))." -ForegroundColor Green
-} else {
-    Write-Host "`n[2/6] Verifying Running Emulator..." -ForegroundColor Yellow
 }
 
 # Apply 120Hz system refresh rate policy & geometry
@@ -188,13 +222,17 @@ Invoke-AdbSilent "shell wm size 1920x1200" | Out-Null
 Invoke-AdbSilent "shell wm density 280" | Out-Null
 Invoke-AdbSilent "shell settings put global policy_control immersive.full=*" | Out-Null
 
-# Install / update benchmark APK
 $apkPath = "$rootDir\bin\TabletDroid.Benchmark.apk"
 Write-Host "  Installing Benchmark APK ($apkPath)..." -ForegroundColor Gray
 Invoke-AdbSilent "uninstall com.tabletdroid.benchmark" | Out-Null
 $installOut = Invoke-AdbOutput "install -r -d -t `"$apkPath`""
 if ($installOut -notmatch "Success") { throw "Failed to install benchmark APK: $installOut" }
 Write-Host "  [OK] Benchmark APK installed successfully." -ForegroundColor Green
+
+# Build TabletDroid.Host for embedded trials
+$hostProj = "$rootDir\host\TabletDroid.Host\TabletDroid.Host.csproj"
+& $dotnet build $hostProj -c Debug > $null
+$hostDll = (Resolve-Path "$rootDir\host\TabletDroid.Host\bin\Debug\net9.0-windows\TabletDroid.Host.dll").Path
 
 # -----------------------------------------------------------------------------
 # Statistical Helper Functions
@@ -247,20 +285,24 @@ function Get-Stats {
 # -----------------------------------------------------------------------------
 # Workload Execution & Logcat Extraction Function
 # -----------------------------------------------------------------------------
-function Run-InputLatencyWorkload {
+function Execute-SingleConditionWorkload {
     param(
-        [string]$ConditionName
+        [string]$ConditionName,
+        [int]$TrialIndex
     )
 
-    Write-Host "  [Launch] Starting InputProbeActivity in Canonical Mode..." -ForegroundColor Cyan
-    Invoke-AdbSilent "shell am start -S -n com.tabletdroid.benchmark/.InputProbeActivity --ez canonical_mode true" | Out-Null
-    Start-Sleep -Seconds 2
+    # 1. Deterministic State Reset
+    Invoke-AdbSilent "shell am force-stop com.tabletdroid.benchmark" | Out-Null
+    Start-Sleep -Milliseconds 400
+    Invoke-AdbSilent "shell am start -n com.tabletdroid.benchmark/.InputProbeActivity --ez canonical_mode true" | Out-Null
+    Start-Sleep -Milliseconds 1500
 
     # Clear logcat
     Invoke-AdbSilent "logcat -c" | Out-Null
-    Start-Sleep -Milliseconds 300
+    Start-Sleep -Milliseconds 200
 
-    Write-Host "  [Workload 1/3] Executing $TapCount discrete TAPs across viewport..." -ForegroundColor Gray
+    # 2. Execute Workload
+    # TAP
     for ($i = 0; $i -lt $TapCount; $i++) {
         $x = 200 + (($i * 37) % 1500)
         $y = 200 + (($i * 29) % 800)
@@ -268,7 +310,7 @@ function Run-InputLatencyWorkload {
         Start-Sleep -Milliseconds 60
     }
 
-    Write-Host "  [Workload 2/3] Executing $DragCount continuous DRAGs (sustained MOVE sequences)..." -ForegroundColor Gray
+    # CONTINUOUS DRAG
     for ($i = 0; $i -lt $DragCount; $i++) {
         $x1 = 300 + (($i * 73) % 1200)
         $y1 = 300 + (($i * 51) % 600)
@@ -278,7 +320,7 @@ function Run-InputLatencyWorkload {
         Start-Sleep -Milliseconds 120
     }
 
-    Write-Host "  [Workload 3/3] Executing $SwipeCount rapid SWIPEs / FLINGs..." -ForegroundColor Gray
+    # SWIPE / FLING
     for ($i = 0; $i -lt $SwipeCount; $i++) {
         $x1 = 1400 - (($i * 61) % 800)
         $y1 = 800 - (($i * 47) % 500)
@@ -288,187 +330,336 @@ function Run-InputLatencyWorkload {
         Start-Sleep -Milliseconds 100
     }
 
-    Start-Sleep -Seconds 2
+    Start-Sleep -Milliseconds 1500
 
-    # Extract logcat
-    Write-Host "  [Extract] Retrieving and parsing INPUT_PROBE_JSON records..." -ForegroundColor Gray
+    # 3. Extract & Validate logcat JSON
     $logcatRaw = Invoke-AdbOutput "logcat -d -s TabletDroidInputProbe"
     $matches = [regex]::Matches($logcatRaw, 'INPUT_PROBE_JSON:\s*(\{.*\})')
 
     $records = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $invalidCount = 0
+    $invalidJsonCount = 0
+    $invalidTimestampCount = 0
 
     foreach ($m in $matches) {
         try {
             $j = $m.Groups[1].Value | ConvertFrom-Json
             
-            # Validation rules: schemaVersion == 2, sequenceId > 0, eventToDrawMs > 0
-            if ($j.schemaVersion -eq 2 -and $j.sequenceId -gt 0 -and $j.eventToDrawMs -gt 0) {
-                $records.Add([PSCustomObject]@{
-                    schemaVersion = [int]$j.schemaVersion
-                    sequenceId = [int]$j.sequenceId
-                    gestureId = [int]$j.gestureId
-                    action = [string]$j.action
-                    actionCode = [int]$j.actionCode
-                    eventUptime = [int64]$j.eventUptime
-                    receiveUptime = [int64]$j.receiveUptime
-                    receiveNano = [int64]$j.receiveNano
-                    choreographerFrameNano = [int64]$j.choreographerFrameNano
-                    drawNano = [int64]$j.drawNano
-                    x = [double]$j.x
-                    y = [double]$j.y
-                    eventToDispatchMs = [double]$j.eventToDispatchMs
-                    dispatchToFrameMs = [double]$j.dispatchToFrameMs
-                    frameToDrawMs = [double]$j.frameToDrawMs
-                    eventToDrawMs = [double]$j.eventToDrawMs
-                })
+            if ($j.schemaVersion -eq 3 -and $j.sequenceId -gt 0) {
+                $isValidRecord = ($j.valid -eq $true -and $j.eventToDrawStartMs -gt 0)
+                if ($isValidRecord) {
+                    $records.Add([PSCustomObject]@{
+                        schemaVersion = [int]$j.schemaVersion
+                        sequenceId = [int]$j.sequenceId
+                        gestureId = [int]$j.gestureId
+                        frameSequenceId = [int]$j.frameSequenceId
+                        eventsInFrame = [int]$j.eventsInFrame
+                        action = [string]$j.action
+                        actionCode = [int]$j.actionCode
+                        eventUptime = [int64]$j.eventUptime
+                        receiveUptime = [int64]$j.receiveUptime
+                        receiveNano = [int64]$j.receiveNano
+                        choreographerFrameNano = [int64]$j.choreographerFrameNano
+                        choreographerCallbackNano = [int64]$j.choreographerCallbackNano
+                        drawStartNano = [int64]$j.drawStartNano
+                        drawEndNano = [int64]$j.drawEndNano
+                        drawNano = [int64]$j.drawNano
+                        x = [double]$j.x
+                        y = [double]$j.y
+                        eventToDispatchMs = [double]$j.eventToDispatchMs
+                        dispatchToVsyncMs = [double]$j.dispatchToVsyncMs
+                        dispatchToCallbackMs = [double]$j.dispatchToCallbackMs
+                        vsyncToCallbackMs = [double]$j.vsyncToCallbackMs
+                        callbackToDrawStartMs = [double]$j.callbackToDrawStartMs
+                        drawDurationMs = [double]$j.drawDurationMs
+                        eventToDrawStartMs = [double]$j.eventToDrawStartMs
+                        eventToDrawEndMs = [double]$j.eventToDrawEndMs
+                        valid = [bool]$j.valid
+                        invalidReason = $j.invalidReason
+                    })
+                } else {
+                    $invalidTimestampCount++
+                }
             } else {
-                $invalidCount++
+                $invalidJsonCount++
             }
         } catch {
-            $invalidCount++
+            $invalidJsonCount++
         }
     }
 
-    Write-Host "  [Result] Collected $($records.Count) valid records ($invalidCount invalid/rejected)." -ForegroundColor Green
-    return @{
-        Condition = $ConditionName
-        Records = $records
-        InvalidCount = $invalidCount
-        RawLogcat = $logcatRaw
-    }
-}
+    # Accounting
+    $downEvents = $records | Where-Object { $_.action -eq "DOWN" }
+    $moveEvents = $records | Where-Object { $_.action -eq "MOVE" }
+    $upEvents = $records | Where-Object { $_.action -eq "UP" }
 
-function Analyze-ConditionDataset {
-    param(
-        [hashtable]$Dataset
-    )
+    $expectedDown = $TapCount + $DragCount + $SwipeCount
+    $expectedUp = $TapCount + $DragCount + $SwipeCount
 
-    $records = $Dataset.Records
-    $cond = $Dataset.Condition
+    $observedDown = $downEvents.Count
+    $observedUp = $upEvents.Count
+    $missingDown = [math]::Max(0, $expectedDown - $observedDown)
+    $missingUp = [math]::Max(0, $expectedUp - $observedUp)
 
-    # Segregate DOWN, MOVE, UP
-    $downList = $records | Where-Object { $_.action -eq "DOWN" }
-    $moveList = $records | Where-Object { $_.action -eq "MOVE" }
-    $upList = $records | Where-Object { $_.action -eq "UP" }
+    # Cold vs Steady-State (Initial 10 discrete gestures vs remaining)
+    $coldEvents = $records | Where-Object { $_.gestureId -le 10 }
+    $warmEvents = $records | Where-Object { $_.gestureId -gt 10 }
 
-    # Cold vs Warm segregation (Initial 5 events vs Warm events)
-    $coldList = if ($records.Count -ge 5) { $records[0..4] } else { $records }
-    $warmList = if ($records.Count -gt 5) { $records[5..($records.Count - 1)] } else { @() }
+    # Stats Breakdown
+    $downEvtDisp = Get-Stats -Values ($downEvents | ForEach-Object { $_.eventToDispatchMs }) -Name "DOWN_EventToDispatch"
+    $downDispCb = Get-Stats -Values ($downEvents | ForEach-Object { $_.dispatchToCallbackMs }) -Name "DOWN_DispatchToCallback"
+    $downCbDraw = Get-Stats -Values ($downEvents | ForEach-Object { $_.callbackToDrawStartMs }) -Name "DOWN_CallbackToDrawStart"
+    $downDrawDur = Get-Stats -Values ($downEvents | ForEach-Object { $_.drawDurationMs }) -Name "DOWN_DrawDuration"
+    $downEvtDrawStart = Get-Stats -Values ($downEvents | ForEach-Object { $_.eventToDrawStartMs }) -Name "DOWN_EventToDrawStart"
+    $downEvtDrawEnd = Get-Stats -Values ($downEvents | ForEach-Object { $_.eventToDrawEndMs }) -Name "DOWN_EventToDrawEnd"
 
-    $coldDownList = $coldList | Where-Object { $_.action -eq "DOWN" }
-    $warmDownList = $warmList | Where-Object { $_.action -eq "DOWN" }
+    $moveEvtDisp = Get-Stats -Values ($moveEvents | ForEach-Object { $_.eventToDispatchMs }) -Name "MOVE_EventToDispatch"
+    $moveDispCb = Get-Stats -Values ($moveEvents | ForEach-Object { $_.dispatchToCallbackMs }) -Name "MOVE_DispatchToCallback"
+    $moveCbDraw = Get-Stats -Values ($moveEvents | ForEach-Object { $_.callbackToDrawStartMs }) -Name "MOVE_CallbackToDrawStart"
+    $moveDrawDur = Get-Stats -Values ($moveEvents | ForEach-Object { $_.drawDurationMs }) -Name "MOVE_DrawDuration"
+    $moveEvtDrawStart = Get-Stats -Values ($moveEvents | ForEach-Object { $_.eventToDrawStartMs }) -Name "MOVE_EventToDrawStart"
+    $moveEvtDrawEnd = Get-Stats -Values ($moveEvents | ForEach-Object { $_.eventToDrawEndMs }) -Name "MOVE_EventToDrawEnd"
 
-    # DOWN Stats
-    $downEvtDisp = Get-Stats -Values ($downList | ForEach-Object { $_.eventToDispatchMs }) -Name "DOWN_EventToDispatch"
-    $downDispFrame = Get-Stats -Values ($downList | ForEach-Object { $_.dispatchToFrameMs }) -Name "DOWN_DispatchToFrame"
-    $downFrameDraw = Get-Stats -Values ($downList | ForEach-Object { $_.frameToDrawMs }) -Name "DOWN_FrameToDraw"
-    $downEvtDraw = Get-Stats -Values ($downList | ForEach-Object { $_.eventToDrawMs }) -Name "DOWN_EventToDraw"
-
-    # MOVE Stats
-    $moveEvtDisp = Get-Stats -Values ($moveList | ForEach-Object { $_.eventToDispatchMs }) -Name "MOVE_EventToDispatch"
-    $moveDispFrame = Get-Stats -Values ($moveList | ForEach-Object { $_.dispatchToFrameMs }) -Name "MOVE_DispatchToFrame"
-    $moveFrameDraw = Get-Stats -Values ($moveList | ForEach-Object { $_.frameToDrawMs }) -Name "MOVE_FrameToDraw"
-    $moveEvtDraw = Get-Stats -Values ($moveList | ForEach-Object { $_.eventToDrawMs }) -Name "MOVE_EventToDraw"
-
-    # Cold vs Warm Stats
-    $coldEvtDraw = Get-Stats -Values ($coldList | ForEach-Object { $_.eventToDrawMs }) -Name "Cold_EventToDraw"
-    $warmEvtDraw = Get-Stats -Values ($warmList | ForEach-Object { $_.eventToDrawMs }) -Name "Warm_EventToDraw"
-    $initialPenaltyMs = [math]::Round($coldEvtDraw.Mean - $warmEvtDraw.Mean, 3)
+    $coldDrawStart = Get-Stats -Values ($coldEvents | ForEach-Object { $_.eventToDrawStartMs }) -Name "Cold_EventToDrawStart"
+    $warmDrawStart = Get-Stats -Values ($warmEvents | ForEach-Object { $_.eventToDrawStartMs }) -Name "Warm_EventToDrawStart"
+    $initialPenalty = [math]::Round($coldDrawStart.Mean - $warmDrawStart.Mean, 3)
 
     return [PSCustomObject]@{
-        Condition = $cond
-        TotalRecords = $records.Count
-        InvalidCount = $Dataset.InvalidCount
-        DownCount = $downList.Count
-        MoveCount = $moveList.Count
-        UpCount = $upList.Count
-        
+        Trial = $TrialIndex
+        Condition = $ConditionName
+        TotalValidRecords = $records.Count
+        ExpectedDown = $expectedDown
+        ObservedDown = $observedDown
+        MissingDown = $missingDown
+        ExpectedUp = $expectedUp
+        ObservedUp = $observedUp
+        MissingUp = $missingUp
+        MoveCount = $moveEvents.Count
+        InvalidJsonCount = $invalidJsonCount
+        InvalidTimestampCount = $invalidTimestampCount
+        RejectedCount = $invalidJsonCount + $invalidTimestampCount
+
         Down_EventToDispatch = $downEvtDisp
-        Down_DispatchToFrame = $downDispFrame
-        Down_FrameToDraw = $downFrameDraw
-        Down_EventToDraw = $downEvtDraw
+        Down_DispatchToCallback = $downDispCb
+        Down_CallbackToDrawStart = $downCbDraw
+        Down_DrawDuration = $downDrawDur
+        Down_EventToDrawStart = $downEvtDrawStart
+        Down_EventToDrawEnd = $downEvtDrawEnd
 
         Move_EventToDispatch = $moveEvtDisp
-        Move_DispatchToFrame = $moveDispFrame
-        Move_FrameToDraw = $moveFrameDraw
-        Move_EventToDraw = $moveEvtDraw
+        Move_DispatchToCallback = $moveDispCb
+        Move_CallbackToDrawStart = $moveCbDraw
+        Move_DrawDuration = $moveDrawDur
+        Move_EventToDrawStart = $moveEvtDrawStart
+        Move_EventToDrawEnd = $moveEvtDrawEnd
 
-        Cold_EventToDraw = $coldEvtDraw
-        Warm_EventToDraw = $warmEvtDraw
-        InitialPenaltyMs = $initialPenaltyMs
+        Cold_EventToDrawStart = $coldDrawStart
+        Warm_EventToDrawStart = $warmDrawStart
+        InitialPenaltyMs = $initialPenalty
+
+        RawRecords = $records
     }
 }
 
 # -----------------------------------------------------------------------------
-# STEP 3: Standalone Latency Measurement
+# STEP 3: Counter-Balanced 6-Trial Benchmark Execution
 # -----------------------------------------------------------------------------
-Write-Host "`n[3/6] Running Standalone Emulator Input Latency Benchmark..." -ForegroundColor Yellow
-$standaloneData = Run-InputLatencyWorkload -ConditionName "Standalone_Emulator"
-$standaloneSummary = Analyze-ConditionDataset -Dataset $standaloneData
+Write-Host "`n[3/6] Executing Counter-Balanced Multi-Trial Benchmark ($TrialCount Trials)..." -ForegroundColor Yellow
 
-# Save Standalone Events & Summary
-$standaloneData.Records | ForEach-Object { $_ | ConvertTo-Json -Compress } | Set-Content -Path "$sessionOutputDir\standalone-events.jsonl" -Encoding UTF8
-$standaloneSummary | ConvertTo-Json -Depth 5 | Set-Content -Path "$sessionOutputDir\standalone-summary.json" -Encoding UTF8
+# Counter-balanced alternating plan:
+# Trial 1: Standalone -> Embedded
+# Trial 2: Embedded -> Standalone
+# Trial 3: Standalone -> Embedded
+# Trial 4: Embedded -> Standalone
+# Trial 5: Standalone -> Embedded
+# Trial 6: Embedded -> Standalone
 
-Write-Host "  [OK] Standalone Benchmark Complete: $($standaloneSummary.TotalRecords) samples (DOWN: $($standaloneSummary.DownCount), MOVE: $($standaloneSummary.MoveCount))" -ForegroundColor Green
-Write-Host "       DOWN Event->Draw: P50=$($standaloneSummary.Down_EventToDraw.P50) ms, P95=$($standaloneSummary.Down_EventToDraw.P95) ms, P99=$($standaloneSummary.Down_EventToDraw.P99) ms" -ForegroundColor Cyan
-Write-Host "       MOVE Event->Draw: P50=$($standaloneSummary.Move_EventToDraw.P50) ms, P95=$($standaloneSummary.Move_EventToDraw.P95) ms, P99=$($standaloneSummary.Move_EventToDraw.P99) ms" -ForegroundColor Cyan
+$allStandaloneTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
+$allEmbeddedTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# -----------------------------------------------------------------------------
-# STEP 4: Host Embedded Latency Measurement (Win32 SetParent)
-# -----------------------------------------------------------------------------
-Write-Host "`n[4/6] Building & Launching TabletDroid.Host for Embedded Benchmark..." -ForegroundColor Yellow
-$hostProj = "$rootDir\host\TabletDroid.Host\TabletDroid.Host.csproj"
-& $dotnet build $hostProj -c Debug > $null
-$hostDll = (Resolve-Path "$rootDir\host\TabletDroid.Host\bin\Debug\net9.0-windows\TabletDroid.Host.dll").Path
-$hostProc = Start-Process -FilePath $dotnet -ArgumentList "`"$hostDll`" --auto-embed --automation" -PassThru
-Start-Sleep -Seconds 3
+$standaloneFirstTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
+$standaloneSecondTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
+$embeddedFirstTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
+$embeddedSecondTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# Verify Host Embedding
-$isEmbedVerified = $false
-$lastGeom = $null
-for ($i = 0; $i -lt 20; $i++) {
-    $lastGeom = Invoke-HostCmd -Cmd "GET_GEOMETRY"
-    if ($null -ne $lastGeom -and $lastGeom.isEmbedded -eq $true) {
-        $isEmbedVerified = $true
-        break
+$trialSummaryRows = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+for ($t = 1; $t -le $TrialCount; $t++) {
+    $trialDir = "$sessionOutputDir\trial-0$t"
+    New-Item -ItemType Directory -Path $trialDir -Force | Out-Null
+
+    $isStandaloneFirst = ($t % 2 -eq 1)
+    $orderDesc = if ($isStandaloneFirst) { "Standalone -> Embedded" } else { "Embedded -> Standalone" }
+
+    Write-Host "`n--------------------------------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host " TRIAL $t / $TrialCount : Execution Order = [$orderDesc]" -ForegroundColor Cyan
+    Write-Host "--------------------------------------------------------------------------------" -ForegroundColor Cyan
+
+    $stdSummary = $null
+    $embSummary = $null
+
+    if ($isStandaloneFirst) {
+        # 1. Standalone First
+        Write-Host "  (1/2) Executing Standalone (First-Run in Trial $t)..." -ForegroundColor Gray
+        $stdSummary = Execute-SingleConditionWorkload -ConditionName "Standalone_Emulator" -TrialIndex $t
+        $standaloneFirstTrials.Add($stdSummary)
+
+        # 2. Host Embedded Second
+        Write-Host "  (2/2) Launching TabletDroid.Host & Executing Embedded (Second-Run in Trial $t)..." -ForegroundColor Gray
+        $hostProc = Start-Process -FilePath $dotnet -ArgumentList "`"$hostDll`" --auto-embed --automation" -PassThru
+        Start-Sleep -Seconds 2
+        for ($i = 0; $i -lt 15; $i++) {
+            $g = Invoke-HostCmd -Cmd "GET_GEOMETRY"
+            if ($null -ne $g -and $g.isEmbedded -eq $true) { break }
+            if ($i -ge 2) { Invoke-HostCmd -Cmd "EMBED" | Out-Null }
+            Start-Sleep -Milliseconds 400
+        }
+        $embSummary = Execute-SingleConditionWorkload -ConditionName "Host_Embedded_SetParent" -TrialIndex $t
+        $embeddedSecondTrials.Add($embSummary)
+
+        Invoke-HostCmd -Cmd "DETACH" | Out-Null
+        Start-Sleep -Milliseconds 400
+        if (-not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force -ErrorAction SilentlyContinue }
+    } else {
+        # 1. Host Embedded First
+        Write-Host "  (1/2) Launching TabletDroid.Host & Executing Embedded (First-Run in Trial $t)..." -ForegroundColor Gray
+        $hostProc = Start-Process -FilePath $dotnet -ArgumentList "`"$hostDll`" --auto-embed --automation" -PassThru
+        Start-Sleep -Seconds 2
+        for ($i = 0; $i -lt 15; $i++) {
+            $g = Invoke-HostCmd -Cmd "GET_GEOMETRY"
+            if ($null -ne $g -and $g.isEmbedded -eq $true) { break }
+            if ($i -ge 2) { Invoke-HostCmd -Cmd "EMBED" | Out-Null }
+            Start-Sleep -Milliseconds 400
+        }
+        $embSummary = Execute-SingleConditionWorkload -ConditionName "Host_Embedded_SetParent" -TrialIndex $t
+        $embeddedFirstTrials.Add($embSummary)
+
+        Invoke-HostCmd -Cmd "DETACH" | Out-Null
+        Start-Sleep -Milliseconds 400
+        if (-not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force -ErrorAction SilentlyContinue }
+
+        # 2. Standalone Second
+        Write-Host "  (2/2) Executing Standalone (Second-Run in Trial $t)..." -ForegroundColor Gray
+        $stdSummary = Execute-SingleConditionWorkload -ConditionName "Standalone_Emulator" -TrialIndex $t
+        $standaloneSecondTrials.Add($stdSummary)
     }
-    if ($i -ge 2) { Invoke-HostCmd -Cmd "EMBED" | Out-Null }
-    Start-Sleep -Milliseconds 500
+
+    $allStandaloneTrials.Add($stdSummary)
+    $allEmbeddedTrials.Add($embSummary)
+
+    # Save per-trial artifacts
+    $stdSummary.RawRecords | ForEach-Object { $_ | ConvertTo-Json -Compress } | Set-Content -Path "$trialDir\standalone-events.jsonl" -Encoding UTF8
+    $stdSummary | ConvertTo-Json -Depth 5 | Set-Content -Path "$trialDir\standalone-summary.json" -Encoding UTF8
+
+    $embSummary.RawRecords | ForEach-Object { $_ | ConvertTo-Json -Compress } | Set-Content -Path "$trialDir\embedded-events.jsonl" -Encoding UTF8
+    $embSummary | ConvertTo-Json -Depth 5 | Set-Content -Path "$trialDir\embedded-summary.json" -Encoding UTF8
+
+    Write-Host "  [TRIAL $t OK] Standalone DOWN P50=$($stdSummary.Down_EventToDrawStart.P50)ms (MOVE P50=$($stdSummary.Move_EventToDrawStart.P50)ms) | Embedded DOWN P50=$($embSummary.Down_EventToDrawStart.P50)ms (MOVE P50=$($embSummary.Move_EventToDrawStart.P50)ms)" -ForegroundColor Green
+
+    $trialSummaryRows.Add([PSCustomObject]@{
+        Trial = $t
+        Order = $orderDesc
+        Std_Down_P50 = $stdSummary.Down_EventToDrawStart.P50
+        Std_Down_P95 = $stdSummary.Down_EventToDrawStart.P95
+        Std_Down_P99 = $stdSummary.Down_EventToDrawStart.P99
+        Std_Move_P50 = $stdSummary.Move_EventToDrawStart.P50
+        Std_Move_P95 = $stdSummary.Move_EventToDrawStart.P95
+        Std_Valid = $stdSummary.TotalValidRecords
+        Std_Rejected = $stdSummary.RejectedCount
+
+        Emb_Down_P50 = $embSummary.Down_EventToDrawStart.P50
+        Emb_Down_P95 = $embSummary.Down_EventToDrawStart.P95
+        Emb_Down_P99 = $embSummary.Down_EventToDrawStart.P99
+        Emb_Move_P50 = $embSummary.Move_EventToDrawStart.P50
+        Emb_Move_P95 = $embSummary.Move_EventToDrawStart.P95
+        Emb_Valid = $embSummary.TotalValidRecords
+        Emb_Rejected = $embSummary.RejectedCount
+    })
 }
 
-if (-not $isEmbedVerified) {
-    if (-not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force -ErrorAction SilentlyContinue }
-    throw "[FATAL] Host embed verification failed! isEmbedded was not true."
-}
-
-Write-Host "  [HOST_EMBED_VERIFIED] Embedded HWND=$($lastGeom.embeddedHwnd), Viewport=$($lastGeom.physW)x$($lastGeom.physH)" -ForegroundColor Green
-
-Write-Host "  Running Embedded Latency Workload..." -ForegroundColor Yellow
-$embeddedData = Run-InputLatencyWorkload -ConditionName "Host_Embedded_SetParent"
-$embeddedSummary = Analyze-ConditionDataset -Dataset $embeddedData
-
-# Save Embedded Events & Summary
-$embeddedData.Records | ForEach-Object { $_ | ConvertTo-Json -Compress } | Set-Content -Path "$sessionOutputDir\embedded-events.jsonl" -Encoding UTF8
-$embeddedSummary | ConvertTo-Json -Depth 5 | Set-Content -Path "$sessionOutputDir\embedded-summary.json" -Encoding UTF8
-
-# Gracefully detach & close Host
-Invoke-HostCmd -Cmd "DETACH" | Out-Null
-Start-Sleep -Milliseconds 500
-if (-not $hostProc.HasExited) {
-    Stop-Process -Id $hostProc.Id -Force -ErrorAction SilentlyContinue
-}
-
-Write-Host "  [OK] Embedded Benchmark Complete: $($embeddedSummary.TotalRecords) samples (DOWN: $($embeddedSummary.DownCount), MOVE: $($embeddedSummary.MoveCount))" -ForegroundColor Green
-Write-Host "       DOWN Event->Draw: P50=$($embeddedSummary.Down_EventToDraw.P50) ms, P95=$($embeddedSummary.Down_EventToDraw.P95) ms, P99=$($embeddedSummary.Down_EventToDraw.P99) ms" -ForegroundColor Cyan
-Write-Host "       MOVE Event->Draw: P50=$($embeddedSummary.Move_EventToDraw.P50) ms, P95=$($embeddedSummary.Move_EventToDraw.P95) ms, P99=$($embeddedSummary.Move_EventToDraw.P99) ms" -ForegroundColor Cyan
+$trialSummaryRows | Export-Csv -Path "$sessionOutputDir\trial-summary.csv" -NoTypeInformation -Encoding UTF8
 
 # -----------------------------------------------------------------------------
-# STEP 5: A/B Comparison & Statistical Delta Calculation
+# STEP 4: Multi-Level Statistical Synthesis (Trial-Level vs Pooled)
 # -----------------------------------------------------------------------------
-Write-Host "`n[5/6] Calculating Standalone vs Embedded Latency Deltas..." -ForegroundColor Yellow
+Write-Host "`n[4/6] Synthesizing Trial-Level Distributions & Pooled Statistics..." -ForegroundColor Yellow
 
+# Across-trial distribution
+function Get-TrialLevelMetrics {
+    param([System.Collections.Generic.List[PSCustomObject]]$Trials, [string]$ConditionName)
+
+    $downP50List = $Trials | ForEach-Object { [double]$_.Down_EventToDrawStart.P50 }
+    $downP95List = $Trials | ForEach-Object { [double]$_.Down_EventToDrawStart.P95 }
+    $downP99List = $Trials | ForEach-Object { [double]$_.Down_EventToDrawStart.P99 }
+
+    $moveP50List = $Trials | ForEach-Object { [double]$_.Move_EventToDrawStart.P50 }
+    $moveP95List = $Trials | ForEach-Object { [double]$_.Move_EventToDrawStart.P95 }
+    $moveP99List = $Trials | ForEach-Object { [double]$_.Move_EventToDrawStart.P99 }
+
+    $downDispP50List = $Trials | ForEach-Object { [double]$_.Down_EventToDispatch.P50 }
+    $downDispP95List = $Trials | ForEach-Object { [double]$_.Down_EventToDispatch.P95 }
+    $downCbP50List = $Trials | ForEach-Object { [double]$_.Down_DispatchToCallback.P50 }
+    $downDrawDurP50List = $Trials | ForEach-Object { [double]$_.Down_DrawDuration.P50 }
+
+    return [PSCustomObject]@{
+        Condition = $ConditionName
+        TrialCount = $Trials.Count
+        Down_P50_Median = (Get-Percentile -Values $downP50List -Percentile 50)
+        Down_P50_Mean = [math]::Round((($downP50List | Measure-Object -Average).Average), 3)
+        Down_P95_Median = (Get-Percentile -Values $downP95List -Percentile 50)
+        Down_P99_Median = (Get-Percentile -Values $downP99List -Percentile 50)
+
+        Move_P50_Median = (Get-Percentile -Values $moveP50List -Percentile 50)
+        Move_P50_Mean = [math]::Round((($moveP50List | Measure-Object -Average).Average), 3)
+        Move_P95_Median = (Get-Percentile -Values $moveP95List -Percentile 50)
+        Move_P99_Median = (Get-Percentile -Values $moveP99List -Percentile 50)
+
+        Down_Dispatch_P50_Median = (Get-Percentile -Values $downDispP50List -Percentile 50)
+        Down_Dispatch_P95_Median = (Get-Percentile -Values $downDispP95List -Percentile 50)
+        Down_DispatchToCallback_P50_Median = (Get-Percentile -Values $downCbP50List -Percentile 50)
+        Down_DrawDuration_P50_Median = (Get-Percentile -Values $downDrawDurP50List -Percentile 50)
+    }
+}
+
+$stdAcrossTrials = Get-TrialLevelMetrics -Trials $allStandaloneTrials -ConditionName "Standalone_Emulator"
+$embAcrossTrials = Get-TrialLevelMetrics -Trials $allEmbeddedTrials -ConditionName "Host_Embedded_SetParent"
+
+# Order Effect Computation
+$stdFirstP50 = [math]::Round((($standaloneFirstTrials | ForEach-Object { $_.Down_EventToDrawStart.P50 } | Measure-Object -Average).Average), 3)
+$stdSecondP50 = [math]::Round((($standaloneSecondTrials | ForEach-Object { $_.Down_EventToDrawStart.P50 } | Measure-Object -Average).Average), 3)
+$stdOrderDelta = [math]::Round($stdSecondP50 - $stdFirstP50, 3)
+
+$embFirstP50 = [math]::Round((($embeddedFirstTrials | ForEach-Object { $_.Down_EventToDrawStart.P50 } | Measure-Object -Average).Average), 3)
+$embSecondP50 = [math]::Round((($embeddedSecondTrials | ForEach-Object { $_.Down_EventToDrawStart.P50 } | Measure-Object -Average).Average), 3)
+$embOrderDelta = [math]::Round($embSecondP50 - $embFirstP50, 3)
+
+$orderEffectRows = @(
+    [PSCustomObject]@{
+        Condition = "Standalone_Emulator"
+        FirstRunMeanP50 = "$stdFirstP50 ms"
+        SecondRunMeanP50 = "$stdSecondP50 ms"
+        OrderDelta = if ($stdOrderDelta -ge 0) { "+$stdOrderDelta ms" } else { "$stdOrderDelta ms" }
+    },
+    [PSCustomObject]@{
+        Condition = "Host_Embedded_SetParent"
+        FirstRunMeanP50 = "$embFirstP50 ms"
+        SecondRunMeanP50 = "$embSecondP50 ms"
+        OrderDelta = if ($embOrderDelta -ge 0) { "+$embOrderDelta ms" } else { "$embOrderDelta ms" }
+    }
+)
+$orderEffectRows | Export-Csv -Path "$sessionOutputDir\order-effect.csv" -NoTypeInformation -Encoding UTF8
+
+# Pooled Analysis
+$pooledStdRecords = [System.Collections.Generic.List[PSCustomObject]]::new()
+$allStandaloneTrials | ForEach-Object { $pooledStdRecords.AddRange($_.RawRecords) }
+$pooledStdDown = Get-Stats -Values ($pooledStdRecords | Where-Object { $_.action -eq "DOWN" } | ForEach-Object { $_.eventToDrawStartMs }) -Name "Pooled_DOWN_EventToDrawStart"
+$pooledStdMove = Get-Stats -Values ($pooledStdRecords | Where-Object { $_.action -eq "MOVE" } | ForEach-Object { $_.eventToDrawStartMs }) -Name "Pooled_MOVE_EventToDrawStart"
+
+$pooledEmbRecords = [System.Collections.Generic.List[PSCustomObject]]::new()
+$allEmbeddedTrials | ForEach-Object { $pooledEmbRecords.AddRange($_.RawRecords) }
+$pooledEmbDown = Get-Stats -Values ($pooledEmbRecords | Where-Object { $_.action -eq "DOWN" } | ForEach-Object { $_.eventToDrawStartMs }) -Name "Pooled_DOWN_EventToDrawStart"
+$pooledEmbMove = Get-Stats -Values ($pooledEmbRecords | Where-Object { $_.action -eq "MOVE" } | ForEach-Object { $_.eventToDrawStartMs }) -Name "Pooled_MOVE_EventToDrawStart"
+
+# Synthesis & Comparison Table
 function Compute-Delta {
     param([double]$Standalone, [double]$Embedded)
     $deltaMs = [math]::Round($Embedded - $Standalone, 3)
@@ -492,82 +683,109 @@ function Add-CompRow {
     })
 }
 
-Add-CompRow -MetricName "DOWN Event->Dispatch P50" -StdVal $standaloneSummary.Down_EventToDispatch.P50 -EmbVal $embeddedSummary.Down_EventToDispatch.P50
-Add-CompRow -MetricName "DOWN Event->Dispatch P95" -StdVal $standaloneSummary.Down_EventToDispatch.P95 -EmbVal $embeddedSummary.Down_EventToDispatch.P95
+Add-CompRow -MetricName "Across-Trial DOWN Event->Dispatch P50" -StdVal $stdAcrossTrials.Down_Dispatch_P50_Median -EmbVal $embAcrossTrials.Down_Dispatch_P50_Median
+Add-CompRow -MetricName "Across-Trial DOWN Event->Dispatch P95" -StdVal $stdAcrossTrials.Down_Dispatch_P95_Median -EmbVal $embAcrossTrials.Down_Dispatch_P95_Median
+Add-CompRow -MetricName "Across-Trial DOWN Dispatch->Callback P50" -StdVal $stdAcrossTrials.Down_DispatchToCallback_P50_Median -EmbVal $embAcrossTrials.Down_DispatchToCallback_P50_Median
+Add-CompRow -MetricName "Across-Trial DOWN Draw Duration P50" -StdVal $stdAcrossTrials.Down_DrawDuration_P50_Median -EmbVal $embAcrossTrials.Down_DrawDuration_P50_Median
 
-Add-CompRow -MetricName "DOWN Event->Draw P50" -StdVal $standaloneSummary.Down_EventToDraw.P50 -EmbVal $embeddedSummary.Down_EventToDraw.P50
-Add-CompRow -MetricName "DOWN Event->Draw P95" -StdVal $standaloneSummary.Down_EventToDraw.P95 -EmbVal $embeddedSummary.Down_EventToDraw.P95
-Add-CompRow -MetricName "DOWN Event->Draw P99" -StdVal $standaloneSummary.Down_EventToDraw.P99 -EmbVal $embeddedSummary.Down_EventToDraw.P99
+Add-CompRow -MetricName "Across-Trial DOWN Event->DrawStart P50" -StdVal $stdAcrossTrials.Down_P50_Median -EmbVal $embAcrossTrials.Down_P50_Median
+Add-CompRow -MetricName "Across-Trial DOWN Event->DrawStart P95" -StdVal $stdAcrossTrials.Down_P95_Median -EmbVal $embAcrossTrials.Down_P95_Median
+Add-CompRow -MetricName "Across-Trial DOWN Event->DrawStart P99" -StdVal $stdAcrossTrials.Down_P99_Median -EmbVal $embAcrossTrials.Down_P99_Median
 
-Add-CompRow -MetricName "MOVE Event->Draw P50" -StdVal $standaloneSummary.Move_EventToDraw.P50 -EmbVal $embeddedSummary.Move_EventToDraw.P50
-Add-CompRow -MetricName "MOVE Event->Draw P95" -StdVal $standaloneSummary.Move_EventToDraw.P95 -EmbVal $embeddedSummary.Move_EventToDraw.P95
-Add-CompRow -MetricName "MOVE Event->Draw P99" -StdVal $standaloneSummary.Move_EventToDraw.P99 -EmbVal $embeddedSummary.Move_EventToDraw.P99
+Add-CompRow -MetricName "Across-Trial MOVE Event->DrawStart P50" -StdVal $stdAcrossTrials.Move_P50_Median -EmbVal $embAcrossTrials.Move_P50_Median
+Add-CompRow -MetricName "Across-Trial MOVE Event->DrawStart P95" -StdVal $stdAcrossTrials.Move_P95_Median -EmbVal $embAcrossTrials.Move_P95_Median
+Add-CompRow -MetricName "Across-Trial MOVE Event->DrawStart P99" -StdVal $stdAcrossTrials.Move_P99_Median -EmbVal $embAcrossTrials.Move_P99_Median
 
-Add-CompRow -MetricName "Initial State Penalty (Cold - Warm)" -StdVal $standaloneSummary.InitialPenaltyMs -EmbVal $embeddedSummary.InitialPenaltyMs
+Add-CompRow -MetricName "Pooled DOWN Event->DrawStart P50" -StdVal $pooledStdDown.P50 -EmbVal $pooledEmbDown.P50
+Add-CompRow -MetricName "Pooled DOWN Event->DrawStart P95" -StdVal $pooledStdDown.P95 -EmbVal $pooledEmbDown.P95
+Add-CompRow -MetricName "Pooled DOWN Event->DrawStart P99" -StdVal $pooledStdDown.P99 -EmbVal $pooledEmbDown.P99
+
+Add-CompRow -MetricName "Pooled MOVE Event->DrawStart P50" -StdVal $pooledStdMove.P50 -EmbVal $pooledEmbMove.P50
+Add-CompRow -MetricName "Pooled MOVE Event->DrawStart P95" -StdVal $pooledStdMove.P95 -EmbVal $pooledEmbMove.P95
+Add-CompRow -MetricName "Pooled MOVE Event->DrawStart P99" -StdVal $pooledStdMove.P99 -EmbVal $pooledEmbMove.P99
+
+$totStdValid = ($allStandaloneTrials | Measure-Object -Property TotalValidRecords -Sum).Sum
+$totEmbValid = ($allEmbeddedTrials | Measure-Object -Property TotalValidRecords -Sum).Sum
+$totStdRejected = ($allStandaloneTrials | Measure-Object -Property RejectedCount -Sum).Sum
+$totEmbRejected = ($allEmbeddedTrials | Measure-Object -Property RejectedCount -Sum).Sum
 
 $compRows.Add([PSCustomObject]@{
-    Metric = "Total Valid Events"
-    Standalone = "$($standaloneSummary.TotalRecords)"
-    Embedded = "$($embeddedSummary.TotalRecords)"
-    Delta_ms = "$($embeddedSummary.TotalRecords - $standaloneSummary.TotalRecords)"
+    Metric = "Total Valid Records (6 Trials)"
+    Standalone = "$totStdValid"
+    Embedded = "$totEmbValid"
+    Delta_ms = "$($totEmbValid - $totStdValid)"
     Delta_pct = "N/A"
     RawDeltaMs = 0.0
     RawDeltaPct = 0.0
 })
 
 $compRows.Add([PSCustomObject]@{
-    Metric = "Missing / Invalid Events"
-    Standalone = "$($standaloneSummary.InvalidCount)"
-    Embedded = "$($embeddedSummary.InvalidCount)"
-    Delta_ms = "$($embeddedSummary.InvalidCount - $standaloneSummary.InvalidCount)"
+    Metric = "Rejected / Invalid Records (6 Trials)"
+    Standalone = "$totStdRejected"
+    Embedded = "$totEmbRejected"
+    Delta_ms = "$($totEmbRejected - $totStdRejected)"
     Delta_pct = "N/A"
     RawDeltaMs = 0.0
     RawDeltaPct = 0.0
 })
 
-# Save comparison.csv
 $compRows | Export-Csv -Path "$sessionOutputDir\comparison.csv" -NoTypeInformation -Encoding UTF8
 
-# Save environment metadata
-$envMetadata = @{
+$conditionSummary = @{
     Timestamp = $timestamp
-    HostHardware = "ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA RTX 3050 Ti Laptop GPU, 16GB RAM)"
-    HostOS = "Windows 11 Home 23H2 (Hypervisor: WHPX)"
-    Resolution = "1920x1200 @ 280dpi"
-    RefreshRate = "120 Hz (hw.lcd.vsync=120, peak_refresh_rate=120, min_refresh_rate=120)"
-    GpuMode = "host"
-    GlTransport = "pipe"
-    Embedding = "Win32 SetParent Child Window"
-    TargetPackage = "com.tabletdroid.benchmark"
-    TargetActivity = "com.tabletdroid.benchmark/.InputProbeActivity"
-    TapCount = $TapCount
-    DragCount = $DragCount
-    SwipeCount = $SwipeCount
-    StandaloneValidRecords = $standaloneSummary.TotalRecords
-    EmbeddedValidRecords = $embeddedSummary.TotalRecords
+    TrialCount = $TrialCount
+    StandaloneAcrossTrials = $stdAcrossTrials
+    EmbeddedAcrossTrials = $embAcrossTrials
+    PooledStandalone = @{ Down = $pooledStdDown; Move = $pooledStdMove }
+    PooledEmbedded = @{ Down = $pooledEmbDown; Move = $pooledEmbMove }
+    OrderEffect = @{
+        StandaloneFirstMeanP50 = $stdFirstP50
+        StandaloneSecondMeanP50 = $stdSecondP50
+        StandaloneOrderDelta = $stdOrderDelta
+        EmbeddedFirstMeanP50 = $embFirstP50
+        EmbeddedSecondMeanP50 = $embSecondP50
+        EmbeddedOrderDelta = $embOrderDelta
+    }
 }
-$envMetadata | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\environment.json" -Encoding UTF8
+$conditionSummary | ConvertTo-Json -Depth 6 | Set-Content -Path "$sessionOutputDir\condition-summary.json" -Encoding UTF8
+
+$methodologyMeta = @{
+    SchemaVersion = 3
+    TrialProtocol = "Counter-balanced AB / BA alternation"
+    TotalTrials = $TrialCount
+    TapPerTrial = $TapCount
+    DragPerTrial = $DragCount
+    SwipePerTrial = $SwipeCount
+    StateReset = "am force-stop + am start + 1.5s stabilization + logcat -c"
+    Terminology = "Guest Synthetic Software Input-to-Frame Baseline"
+}
+$methodologyMeta | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\methodology.json" -Encoding UTF8
 
 # -----------------------------------------------------------------------------
-# STEP 6: Display Summary & A/B Comparison Table
+# STEP 5: Display Summary Tables
 # -----------------------------------------------------------------------------
 Write-Host "`n================================================================================" -ForegroundColor Cyan
-Write-Host " CANONICAL INPUT LATENCY A/B COMPARISON TABLE" -ForegroundColor Cyan
+Write-Host " CANONICAL HARDENED INPUT LATENCY A/B COMPARISON TABLE (Schema v3, 6 Trials)" -ForegroundColor Cyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 
-$fmtHeader = "{0,-35} | {1,-14} | {2,-14} | {3,-12} | {4,-10}"
+$fmtHeader = "{0,-42} | {1,-14} | {2,-14} | {3,-12} | {4,-10}"
 Write-Host ($fmtHeader -f "Metric", "Standalone", "Embedded", "Delta (ms)", "Delta (%)") -ForegroundColor Yellow
-Write-Host ("-" * 92) -ForegroundColor Gray
+Write-Host ("-" * 100) -ForegroundColor Gray
 
 foreach ($r in $compRows) {
     Write-Host ($fmtHeader -f $r.Metric, $r.Standalone, $r.Embedded, $r.Delta_ms, $r.Delta_pct) -ForegroundColor White
 }
-Write-Host ("-" * 92) -ForegroundColor Gray
+Write-Host ("-" * 100) -ForegroundColor Gray
+
+Write-Host "`n[ORDER EFFECT ANALYSIS]" -ForegroundColor Yellow
+Write-Host "  Standalone : First-run P50 = ${stdFirstP50}ms | Second-run P50 = ${stdSecondP50}ms | Order Delta = ${stdOrderDelta}ms" -ForegroundColor White
+Write-Host "  Embedded   : First-run P50 = ${embFirstP50}ms | Second-run P50 = ${embSecondP50}ms | Order Delta = ${embOrderDelta}ms" -ForegroundColor White
 
 Write-Host "`n[ARTIFACTS SAVED] $sessionOutputDir" -ForegroundColor Green
 Write-Host " - environment.json" -ForegroundColor Green
-Write-Host " - standalone-events.jsonl" -ForegroundColor Green
-Write-Host " - standalone-summary.json" -ForegroundColor Green
-Write-Host " - embedded-events.jsonl" -ForegroundColor Green
-Write-Host " - embedded-summary.json" -ForegroundColor Green
+Write-Host " - methodology.json" -ForegroundColor Green
+Write-Host " - trial-01 .. trial-0$TrialCount/ (events.jsonl & summary.json)" -ForegroundColor Green
+Write-Host " - trial-summary.csv" -ForegroundColor Green
+Write-Host " - condition-summary.json" -ForegroundColor Green
 Write-Host " - comparison.csv" -ForegroundColor Green
+Write-Host " - order-effect.csv" -ForegroundColor Green

@@ -1,0 +1,10 @@
+﻿{
+    "StateReset":  "am force-stop + am start + 1.5s stabilization + logcat -c",
+    "DragPerTrial":  10,
+    "Terminology":  "Guest Synthetic Software Input-to-Frame Baseline",
+    "TrialProtocol":  "Counter-balanced AB / BA alternation",
+    "TotalTrials":  6,
+    "TapPerTrial":  50,
+    "SwipePerTrial":  10,
+    "SchemaVersion":  3
+}

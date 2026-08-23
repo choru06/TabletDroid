@@ -1,0 +1,17 @@
+﻿{
+    "GlTransport":  "hw.gltransport=pipe",
+    "DisplayDensity":  "280",
+    "GitCommit":  "9eb3485d66df47d37415e775d32f92ed3c310114",
+    "Timestamp":  "20260823-212910",
+    "AvdName":  "TabletDroid_Z13_Play",
+    "RAM":  "15.7 GB",
+    "CPU":  "12th Gen Intel(R) Core(TM) i9-12900H",
+    "RefreshRate":  "120 Hz (hw.lcd.vsync=120, peak_refresh_rate=120, min_refresh_rate=120)",
+    "DisplayResolution":  "1920x1200",
+    "HostOS":  "Microsoft Windows 11 Home Insider Preview 10.0.26340",
+    "GuestBuildFingerprint":  "",
+    "GPU":  "Intel(R) Iris(R) Xe Graphics, NVIDIA GeForce RTX 3050 Ti Laptop GPU",
+    "GpuBackend":  "hw.gpu.mode=host (gfxstream)",
+    "AdbVersion":  "Android Debug Bridge version 1.0.41\r",
+    "EmbeddingMechanism":  "Win32 SetParent Child Window"
+}
