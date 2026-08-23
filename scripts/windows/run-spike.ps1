@@ -113,11 +113,13 @@ if (Test-Path $avdConfigFile) {
     $verifiedCfg = Get-Content $avdConfigFile
     $vGpu = ($verifiedCfg | Select-String "^hw\.gpu\.mode\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
     $vTrans = ($verifiedCfg | Select-String "^hw\.gltransport\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+    $vVsyncMatch = ($verifiedCfg | Select-String "^hw\.lcd\.vsync\s*=\s*(.*)").Matches
+    $vVsync = if ($vVsyncMatch) { $vVsyncMatch.Groups[1].Value.Trim() } else { "60" }
 
     if ($vGpu -ne "host" -or $vTrans -ne "pipe") {
         throw "[FATAL] Post-remediation graphics config validation failed! hw.gpu.mode='$vGpu', hw.gltransport='$vTrans' (Expected: host, pipe)"
     }
-    Write-Host "  [CONFIG_VERIFIED] AVD Hardware Profile: hw.gpu.mode='$vGpu', hw.gltransport='$vTrans'" -ForegroundColor Cyan
+    Write-Host "  [CONFIG_VERIFIED] AVD Hardware Profile: hw.gpu.mode='$vGpu', hw.gltransport='$vTrans', hw.lcd.vsync='$vVsync'" -ForegroundColor Cyan
 } else {
     throw "[FATAL] AVD config file '$avdConfigFile' not found!"
 }
@@ -151,10 +153,18 @@ if ($booted) {
     $results["Android Boot"] = "FAIL"
 }
 
-# 5. Fullscreen Insets Workaround 적용
-Write-Host "`n[5/8] Applying Clean Fullscreen policy..." -ForegroundColor Yellow
+# 5. Fullscreen Insets Workaround & Refresh-Rate Policy 적용
+Write-Host "`n[5/8] Applying Clean Fullscreen & Refresh-Rate Policy..." -ForegroundColor Yellow
 & $adb -s $deviceSerial shell settings put global policy_control immersive.full=* 2>$null
-Write-Host "  [PASS] Immersive fullscreen policy applied." -ForegroundColor Green
+if ($vVsync -eq "120") {
+    & $adb -s $deviceSerial shell settings put system peak_refresh_rate 120.0 2>$null
+    & $adb -s $deviceSerial shell settings put system min_refresh_rate 120.0 2>$null
+    & $adb -s $deviceSerial shell settings put global peak_refresh_rate 120.0 2>$null
+    & $adb -s $deviceSerial shell settings put global min_refresh_rate 120.0 2>$null
+    Write-Host "  [PASS] Immersive fullscreen & 120Hz refresh-rate policy applied." -ForegroundColor Green
+} else {
+    Write-Host "  [PASS] Immersive fullscreen policy applied." -ForegroundColor Green
+}
 $results["Fullscreen Policy"] = "PASS"
 
 # 6. GuestAgent 서비스 시작 및 포트 포워딩
