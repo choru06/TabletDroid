@@ -30,7 +30,7 @@ public class DiagnosticLogService : IDiagnosticLogService
         }
         else
         {
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             _logDirectory = Path.Combine(appData, "TabletDroid", "logs");
         }
 

@@ -71,7 +71,7 @@ public class InputProbeActivity extends Activity {
             isTouching = (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL);
             invalidate();
 
-            final double dispatchDelayMs = (eventUptimeMs > 0 && recvUptimeMs >= eventUptimeMs)
+            final double guestDispatchDelayMs = (eventUptimeMs > 0 && recvUptimeMs >= eventUptimeMs)
                 ? (recvUptimeMs - eventUptimeMs)
                 : 0.0;
 
@@ -80,21 +80,21 @@ public class InputProbeActivity extends Activity {
             Choreographer.getInstance().postFrameCallback(new Choreographer.FrameCallback() {
                 @Override
                 public void doFrame(long frameTimeNano) {
-                    final double renderDelayMs = (frameTimeNano > recvNano)
+                    final double guestToChoreographerDelayMs = (frameTimeNano > recvNano)
                         ? (frameTimeNano - recvNano) / 1_000_000.0
                         : 0.0;
 
-                    final double totalDelayMs = dispatchDelayMs + renderDelayMs;
+                    final double totalGuestDelayMs = guestDispatchDelayMs + guestToChoreographerDelayMs;
 
                     String json = String.format(
-                        "{\"seq\":%d,\"action\":%d,\"eventUptimeMs\":%d,\"recvUptimeMs\":%d,\"dispatchDelayMs\":%.3f,\"renderDelayMs\":%.3f,\"totalDelayMs\":%.3f,\"x\":%.1f,\"y\":%.1f}",
-                        seq, action, eventUptimeMs, recvUptimeMs, dispatchDelayMs, renderDelayMs, totalDelayMs, lastX, lastY
+                        "{\"seq\":%d,\"action\":%d,\"eventUptimeMs\":%d,\"recvUptimeMs\":%d,\"guestDispatchDelayMs\":%.3f,\"guestToChoreographerDelayMs\":%.3f,\"totalGuestDelayMs\":%.3f,\"x\":%.1f,\"y\":%.1f}",
+                        seq, action, eventUptimeMs, recvUptimeMs, guestDispatchDelayMs, guestToChoreographerDelayMs, totalGuestDelayMs, lastX, lastY
                     );
                     Log.i(TAG, "INPUT_PROBE_JSON: " + json);
 
                     tvStats.setText(String.format(
-                        "Input Probe #%03d | Action: %d\nGuest Dispatch Delay: %.2f ms\nFrame Render Delay  : %.2f ms\nTotal Host->Render : %.2f ms\nPosition: (%.0f, %.0f)",
-                        seq, action, dispatchDelayMs, renderDelayMs, totalDelayMs, lastX, lastY
+                        "Input Probe #%03d | Action: %d\nGuest Dispatch Delay     : %.2f ms\nGuest -> Choreographer   : %.2f ms\nTotal Guest Delay         : %.2f ms\nPosition: (%.0f, %.0f)",
+                        seq, action, guestDispatchDelayMs, guestToChoreographerDelayMs, totalGuestDelayMs, lastX, lastY
                     ));
                 }
             });

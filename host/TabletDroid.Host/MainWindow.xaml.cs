@@ -53,6 +53,8 @@ public partial class MainWindow : Window
         Loaded += OnMainWindowLoaded;
         Closing += OnMainWindowClosing;
         SizeChanged += (s, e) => UpdateEmbeddedViewport();
+
+        StartAutomationServer();
     }
 
     private async void OnMainWindowLoaded(object sender, RoutedEventArgs e)
@@ -76,11 +78,16 @@ public partial class MainWindow : Window
         {
             _ = Task.Run(async () =>
             {
-                await Task.Delay(1000);
-                await Dispatcher.InvokeAsync(async () =>
+                for (int i = 0; i < 30; i++)
                 {
-                    await TriggerEmbedAsync();
-                });
+                    await Task.Delay(1000);
+                    try
+                    {
+                        bool embedded = await Dispatcher.InvokeAsync(() => TriggerEmbedAsync()).Task.Unwrap();
+                        if (embedded) break;
+                    }
+                    catch {}
+                }
             });
         }
     }
@@ -88,6 +95,8 @@ public partial class MainWindow : Window
     private async void OnMainWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         _logService.Log(LogCategory.Host, "TabletDroid MainWindow closing.");
+        _automationCts?.Cancel();
+        _automationListener?.Stop();
         _clipboardPollingTimer?.Stop();
         _orientationWatcher.Stop();
         _clipboardBridge.Stop();
@@ -110,6 +119,7 @@ public partial class MainWindow : Window
             AppGridScrollViewer.Visibility = Visibility.Collapsed;
             EmulatorViewport.Visibility = Visibility.Visible;
             BtnToggleEmbed.Content = "Detach Window";
+            this.UpdateLayout();
             UpdateEmbeddedViewport();
 
             var source = PresentationSource.FromVisual(this);
@@ -140,6 +150,7 @@ public partial class MainWindow : Window
         AppGridScrollViewer.Visibility = Visibility.Visible;
         EmulatorViewport.Visibility = Visibility.Collapsed;
         BtnToggleEmbed.Content = "Embed Window";
+        this.UpdateLayout();
         LogText.Text = "Detached emulator window to standalone.";
         _logService.Log(LogCategory.Host, "[HOST_DETACH_SUCCESS] Emulator detached to standalone.");
         return true;
@@ -365,6 +376,159 @@ public partial class MainWindow : Window
         else
         {
             LogText.Text = $"Failed to launch {appName}.";
+        }
+    }
+
+    private System.Net.Sockets.TcpListener? _automationListener;
+    private CancellationTokenSource? _automationCts;
+
+    private void StartAutomationServer()
+    {
+        try
+        {
+            _automationListener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 28889);
+            _automationListener.Start();
+            _automationCts = new CancellationTokenSource();
+            _ = Task.Run(() => ListenAutomationClientsAsync(_automationListener, _automationCts.Token));
+            _logService.Log(LogCategory.Host, "[HOST_AUTOMATION_SERVER] Listening on 127.0.0.1:28889");
+        }
+        catch (Exception ex)
+        {
+            _logService.Log(LogCategory.Host, $"[HOST_AUTOMATION_SERVER_FAIL] Could not bind 28889: {ex.Message}");
+        }
+    }
+
+    private async Task ListenAutomationClientsAsync(System.Net.Sockets.TcpListener listener, CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                var client = await listener.AcceptTcpClientAsync(ct);
+                _ = Task.Run(() => HandleAutomationClientAsync(client, ct));
+            }
+            catch when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logService.Log(LogCategory.Host, $"[HOST_AUTOMATION_ACCEPT_ERR] {ex.Message}");
+            }
+        }
+    }
+
+    private async Task HandleAutomationClientAsync(System.Net.Sockets.TcpClient client, CancellationToken ct)
+    {
+        using (client)
+        using (var stream = client.GetStream())
+        using (var reader = new System.IO.StreamReader(stream, System.Text.Encoding.UTF8))
+        using (var writer = new System.IO.StreamWriter(stream, System.Text.Encoding.UTF8) { AutoFlush = true })
+        {
+            while (!ct.IsCancellationRequested && client.Connected)
+            {
+                var line = await reader.ReadLineAsync(ct);
+                if (string.IsNullOrWhiteSpace(line)) break;
+
+                var parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var cmd = parts[0].ToUpperInvariant();
+
+                if (cmd == "PING")
+                {
+                    await writer.WriteLineAsync("{\"status\":\"PONG\"}");
+                }
+                else if (cmd == "GET_GEOMETRY")
+                {
+                    string response = await Dispatcher.InvokeAsync(() =>
+                    {
+                        var source = PresentationSource.FromVisual(this);
+                        double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+                        double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+                        int clientX = 0, clientY = 0, clientW = 0, clientH = 0;
+                        try
+                        {
+                            var pt = EmulatorViewport.TransformToAncestor(this).Transform(new Point(0, 0));
+                            clientX = (int)Math.Round(pt.X * dpiX);
+                            clientY = (int)Math.Round(pt.Y * dpiY);
+                            clientW = (int)Math.Round(EmulatorViewport.ActualWidth * dpiX);
+                            clientH = (int)Math.Round(EmulatorViewport.ActualHeight * dpiY);
+                        }
+                        catch {}
+
+                        return System.Text.Json.JsonSerializer.Serialize(new
+                        {
+                            isEmbedded = _windowEmbedder.IsEmbedded,
+                            embeddedHwnd = $"0x{_windowEmbedder.EmbeddedHwnd.ToString("X")}",
+                            logicalW = EmulatorViewport.ActualWidth,
+                            logicalH = EmulatorViewport.ActualHeight,
+                            dpiScale = dpiX,
+                            physX = clientX,
+                            physY = clientY,
+                            physW = clientW,
+                            physH = clientH,
+                            windowW = this.ActualWidth,
+                            windowH = this.ActualHeight,
+                            windowState = this.WindowState.ToString()
+                        });
+                    });
+                    await writer.WriteLineAsync(response);
+                }
+                else if (cmd == "SET_SIZE" && parts.Length >= 3)
+                {
+                    if (double.TryParse(parts[1], out double w) && double.TryParse(parts[2], out double h))
+                    {
+                        await Dispatcher.InvokeAsync(() =>
+                        {
+                            this.WindowState = WindowState.Normal;
+                            this.Width = w;
+                            this.Height = h;
+                            this.UpdateLayout();
+                            UpdateEmbeddedViewport();
+                        });
+                        await writer.WriteLineAsync("{\"status\":\"OK\"}");
+                    }
+                    else
+                    {
+                        await writer.WriteLineAsync("{\"status\":\"ERR_PARAM\"}");
+                    }
+                }
+                else if (cmd == "SET_STATE" && parts.Length >= 2)
+                {
+                    var stStr = parts[1].ToUpperInvariant();
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (stStr == "MAXIMIZE" || stStr == "MAXIMIZED") this.WindowState = WindowState.Maximized;
+                        else if (stStr == "RESTORE" || stStr == "NORMAL") this.WindowState = WindowState.Normal;
+                        this.UpdateLayout();
+                        UpdateEmbeddedViewport();
+                    });
+                    await writer.WriteLineAsync("{\"status\":\"OK\"}");
+                }
+                else if (cmd == "DETACH")
+                {
+                    bool ok = await Dispatcher.InvokeAsync(() => TriggerDetach());
+                    await writer.WriteLineAsync(System.Text.Json.JsonSerializer.Serialize(new { status = "OK", isEmbedded = _windowEmbedder.IsEmbedded, success = ok }));
+                }
+                else if (cmd == "EMBED")
+                {
+                    bool ok = await Dispatcher.InvokeAsync(() => TriggerEmbedAsync()).Task.Unwrap();
+                    await writer.WriteLineAsync(System.Text.Json.JsonSerializer.Serialize(new { status = "OK", isEmbedded = _windowEmbedder.IsEmbedded, success = ok }));
+                }
+                else if (cmd == "SIMULATE_ORIENTATION" && parts.Length >= 2)
+                {
+                    var rotStr = parts[1].ToUpperInvariant();
+                    var orient = (rotStr == "PORTRAIT" || rotStr == "1" || rotStr == "RIGHT90")
+                        ? Protocol.DeviceOrientation.OrientationRight90
+                        : Protocol.DeviceOrientation.OrientationNatural;
+
+                    _orientationWatcher.SimulateOrientationChange(orient);
+                    await writer.WriteLineAsync(System.Text.Json.JsonSerializer.Serialize(new { status = "OK", orientation = orient.ToString() }));
+                }
+                else
+                {
+                    await writer.WriteLineAsync("{\"status\":\"ERR_UNKNOWN_CMD\"}");
+                }
+            }
         }
     }
 }

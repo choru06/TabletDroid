@@ -210,16 +210,24 @@ function Measure-RealHostTrial {
 
     # 1. Bring Target Activity to Foreground
     & $adb -s $DeviceSerial shell am start -n $ActivityName > $null 2>&1
-    Start-Sleep -Milliseconds 600
+    Start-Sleep -Milliseconds 800
 
     # 2. Reset In-App State & Gfxinfo
+    & $adb -s $DeviceSerial logcat -c > $null 2>&1
     & $adb -s $DeviceSerial shell am broadcast -p $pkg -a com.tabletdroid.benchmark.ACTION_RESET > $null 2>&1
     & $adb -s $DeviceSerial shell dumpsys gfxinfo $pkg reset > $null 2>&1
-    & $adb -s $DeviceSerial logcat -c > $null 2>&1
     Start-Sleep -Milliseconds 400
 
-    # 3. Start In-App Benchmark Engine
-    & $adb -s $DeviceSerial shell am broadcast -p $pkg -a com.tabletdroid.benchmark.ACTION_START --ei warmup_sec $warmupSec --ei measure_sec $measureSec --ef velocity_px_s $velocity > $null 2>&1
+    # 3. Start In-App Benchmark Engine with verification
+    for ($startTry = 0; $startTry -lt 3; $startTry++) {
+        & $adb -s $DeviceSerial shell am broadcast -p $pkg -a com.tabletdroid.benchmark.ACTION_START --ei warmup_sec $warmupSec --ei measure_sec $measureSec --ef velocity_px_s $velocity > $null 2>&1
+        Start-Sleep -Milliseconds 300
+        $statusRaw = (& $adb -s $DeviceSerial logcat -d -s TabletDroidBenchmark 2>$null) | Out-String
+        if ($statusRaw -match "Benchmark started|WARMUP|RUNNING") {
+            break
+        }
+        Start-Sleep -Milliseconds 300
+    }
 
     # 4. Wait for Warmup
     if ($warmupSec -gt 0) {

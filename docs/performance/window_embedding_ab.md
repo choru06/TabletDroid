@@ -1,6 +1,6 @@
 ﻿# TabletDroid v0.1 Win32 SetParent Embedding Revalidation Report (Synthetic vs Real Host E2E)
 
-- **Timestamp**: 2026-08-23 15:19:31
+- **Timestamp**: 2026-08-23 15:32:41
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **Host Operating System**: Windows 11 Home 23H2 (Hypervisor: WHPX)
 - **Host Application**: `TabletDroid.Host` (.NET 9.0 WPF) via `Win32WindowEmbedderService`
@@ -20,44 +20,44 @@
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Standalone Baseline** | Standalone QEMU | 5 / 5 | **59.97 FPS** | [57.50, 59.97] | 0.98 | 1.6% | 24,000 px | 0.0% | 24.67 ms | 25.98 ms | 0.0% | 0 | **PASS** |
 | **Synthetic SetParent** | Win32 Host Container | 5 / 5 | **59.57 FPS** | [56.84, 59.89] | 1.12 | 1.9% | 24,013 px | 0.0% | 29.72 ms | 34.72 ms | 0.0% | 0 | **PASS** |
-| **Real Host Product Path** | **TabletDroid.Host (WPF)** | **3 / 5** | **59.16 FPS** | [34.09, 59.16] | 10.5 | 21.7% | 24014 px | 0% | 43.79 ms | 455.58 ms | **98.83%** | **0** | **INCONCLUSIVE** |
+| **Real Host Product Path** | **TabletDroid.Host (WPF)** | **5 / 5** | **59.27 FPS** | [57.87, 59.44] | 0.66 | 1.1% | 24000 px | 0% | 41.1 ms | 42.72 ms | **93.36%** | **0** | **PASS** |
 
 ### 1.1 Real Host E2E Complete Raw Trial Records
 
 | Trial ID | Duration (s) | Target Layer | SF totalFrames [Start, End, Delta] | SF Timeline [Start, End, Delta] | SF Janky [Start, End, Delta] | SF Dropped [Start, End, Delta] | Presented FPS | Actual Dist (px) | HWUI Latency Avg (ms) | P50 (ms) | P90 (ms) | Official SF Jank % | Status |
 | :--- | :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Real Host (TabletDroid.Host) (T1) | 30.012s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#144 | [353, 1393, 1040] | [352, 1392, 1040] | [350, 1390, 1040] | [0, 0, 0] | **34.65 FPS** | 0 px | 100.31 ms | 38.34 ms | 472.24 ms | **100%** | INVALID / WORKLOAD_NOT_COMPLETE |
-| Real Host (TabletDroid.Host) (T2) | 30.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#144 | [1774, 2741, 967] | [1773, 2740, 967] | [1739, 2706, 967] | [0, 0, 0] | **32.22 FPS** | 0 px | 81.06 ms | 38.83 ms | 42.2 ms | **100%** | INVALID / WORKLOAD_NOT_COMPLETE |
-| Real Host (TabletDroid.Host) (T3) | 30.005s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#144 | [3077, 4100, 1023] | [3076, 4099, 1023] | [3013, 4036, 1023] | [0, 0, 0] | **34.09 FPS** | 24014 px | 84.17 ms | 22.77 ms | 455.58 ms | **100%** | VALID |
-| Real Host (TabletDroid.Host) (T4) | 30.001s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#144 | [4448, 5996, 1548] | [4447, 5995, 1548] | [4364, 5882, 1518] | [0, 0, 0] | **51.6 FPS** | 24014 px | 22.7 ms | 22.46 ms | 24.19 ms | **98.06%** | VALID |
-| Real Host (TabletDroid.Host) (T5) | 30.002s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#144 | [6590, 8365, 1775] | [6589, 8364, 1775] | [6441, 8195, 1754] | [0, 0, 0] | **59.16 FPS** | 24013 px | 46.25 ms | 43.79 ms | 64.4 ms | **98.82%** | VALID |
+| Real Host (TabletDroid.Host) (T1) | 30.015s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#119 | [635, 2419, 1784] | [634, 2418, 1784] | [627, 2396, 1769] | [0, 0, 0] | **59.44 FPS** | 24013 px | 38.32 ms | 41.1 ms | 42.72 ms | **99.16%** | VALID |
+| Real Host (TabletDroid.Host) (T2) | 30.006s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#119 | [3045, 4828, 1783] | [3044, 4827, 1783] | [2396, 3773, 1377] | [0, 0, 0] | **59.42 FPS** | 24000 px | 23.88 ms | 24.2 ms | 25.78 ms | **77.23%** | VALID |
+| Real Host (TabletDroid.Host) (T3) | 30.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#119 | [5464, 7243, 1779] | [5463, 7242, 1779] | [3774, 5432, 1658] | [0, 0, 0] | **59.27 FPS** | 24000 px | 28.73 ms | 27.21 ms | 35.08 ms | **93.2%** | VALID |
+| Real Host (TabletDroid.Host) (T4) | 30.005s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#119 | [7856, 9604, 1748] | [7855, 9603, 1748] | [5970, 7702, 1732] | [0, 0, 0] | **58.26 FPS** | 24000 px | 43.32 ms | 44.36 ms | 51.15 ms | **99.08%** | VALID |
+| Real Host (TabletDroid.Host) (T5) | 30.013s | com.tabletdroid.benchmark/com.tabletdroid.benchmark.BenchmarkActivity#119 | [10239, 11976, 1737] | [10238, 11975, 1737] | [8285, 9994, 1709] | [0, 0, 0] | **57.87 FPS** | 24013 px | 41.69 ms | 46.05 ms | 51.63 ms | **98.39%** | VALID |
 
 ### 1.2 SurfaceFlinger FrameTimeline Jank Reason Breakdown (Raw Per-Trial Deltas)
 
 | Trial ID | Delta Timeline | Delta Janky | Delta SfLongCpu | Delta SfLongGpu | Delta SfUnattributed | Delta AppUnattributed | Delta SfScheduling | Delta SfPredictionError | Delta AppBufferStuffing |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Real Host (TabletDroid.Host) (T1) | 1040 | 1040 | 9 | 0 | 2 | 29 | 0 | 1024 | 1040 |
-| Real Host (TabletDroid.Host) (T2) | 967 | 967 | 4 | 0 | 5 | 34 | 0 | 956 | 967 |
-| Real Host (TabletDroid.Host) (T3) | 1023 | 1023 | 10 | 0 | 6 | 30 | 0 | 1002 | 1023 |
-| Real Host (TabletDroid.Host) (T4) | 1548 | 1518 | 75 | 0 | 2 | 107 | 0 | 1426 | 1548 |
-| Real Host (TabletDroid.Host) (T5) | 1775 | 1754 | 33 | 0 | 0 | 48 | 0 | 1713 | 1775 |
+| Real Host (TabletDroid.Host) (T1) | 1784 | 1769 | 1 | 0 | 0 | 7 | 0 | 1768 | 1769 |
+| Real Host (TabletDroid.Host) (T2) | 1783 | 1377 | 0 | 0 | 0 | 2 | 0 | 1377 | 1374 |
+| Real Host (TabletDroid.Host) (T3) | 1779 | 1658 | 7 | 0 | 0 | 59 | 0 | 1646 | 1662 |
+| Real Host (TabletDroid.Host) (T4) | 1748 | 1732 | 35 | 0 | 0 | 118 | 0 | 1683 | 1743 |
+| Real Host (TabletDroid.Host) (T5) | 1737 | 1709 | 40 | 0 | 0 | 226 | 0 | 1643 | 1732 |
 
 ### 1.3 SurfaceFlinger Jank & Timeline Accounting Summary
-- **Total Presented Frames (Delta Sum)**: **4346 frames** across 5 trials
-- **Total FrameTimeline Tokens (Delta Sum)**: **4346 timeline frames** across 5 trials
-- **Total Janky Timeline Frames (Delta Sum)**: **4295 janky frames**
+- **Total Presented Frames (Delta Sum)**: **8831 frames** across 5 trials
+- **Total FrameTimeline Tokens (Delta Sum)**: **8831 timeline frames** across 5 trials
+- **Total Janky Timeline Frames (Delta Sum)**: **8245 janky frames**
 - **Total Dropped Presentation Frames**: **0 frames**
-- **Median Per-Trial Jank %**: **100%**
-- **Max Per-Trial Jank %**: **100%**
-- **Aggregate Official SF Jank %**: **98.83%** (sum(deltaJanky) / sum(deltaTimeline) * 100)
+- **Median Per-Trial Jank %**: **98.39%**
+- **Max Per-Trial Jank %**: **99.16%**
+- **Aggregate Official SF Jank %**: **93.36%** (sum(deltaJanky) / sum(deltaTimeline) * 100)
 
 #### 5-Trial Aggregate Jank Reason Breakdown:
-- **sfPredictionErrorJankyFrames**: **4141**
-- **appBufferStuffingJankyFrames**: **4346**
-- **sfLongCpuJankyFrames**: **118**
+- **sfPredictionErrorJankyFrames**: **8117**
+- **appBufferStuffingJankyFrames**: **8280**
+- **sfLongCpuJankyFrames**: **83**
 - **sfLongGpuJankyFrames**: **0**
-- **sfUnattributedJankyFrames**: **8**
-- **appUnattributedJankyFrames (AppDeadlineMissed)**: **185**
+- **sfUnattributedJankyFrames**: **0**
+- **appUnattributedJankyFrames (AppDeadlineMissed)**: **412**
 - **sfSchedulingJankyFrames**: **0**
 > *Note*: FrameTimeline jank reasons are bitmask-based; multiple reasons may be flagged on a single frame.
 
@@ -74,15 +74,15 @@
 ## 3. [INFERENCE] Real Product Path Performance & Jank Attribution Analysis
 ### 3.1 Real Host E2E vs Standalone Baseline
 - **Standalone Baseline**: **59.97 FPS**
-- **Real Host (TabletDroid.Host) Embedded**: **59.16 FPS**
-- **Performance Delta**: **-0.81 FPS (-1.35%)**
-- **Aggregate Official SF Jank %**: **98.83%**
+- **Real Host (TabletDroid.Host) Embedded**: **59.27 FPS**
+- **Performance Delta**: **-0.7 FPS (-1.17%)**
+- **Aggregate Official SF Jank %**: **93.36%**
 - **Total Dropped Presentation Frames**: **0 frames**
 
 ### 3.2 FrameTimeline Jank Reason Attribution
-> **[OPEN]**: Significant application/SurfaceFlinger deadline misses detected (AppUnattributed=185 [4.26%], SfLongCpu=118, SfLongGpu=0). Characterization remains OPEN for further pipeline profiling.
+> **[OPEN]**: Significant application/SurfaceFlinger deadline misses detected (AppUnattributed=412 [4.67%], SfLongCpu=83, SfLongGpu=0). Characterization remains OPEN for further pipeline profiling.
 
-> **DECISION: [MEASURED] REAL PRODUCT PATH PASS (Regression <= 5%)**: The real production path (launch.bat -> un-spike.ps1 -> TabletDroid.Host -> Win32WindowEmbedderService) achieves **59.16 FPS** (-1.35% delta vs Standalone). Win32 SetParent child-window embedding is confirmed as production-ready.
+> **DECISION: [MEASURED] REAL PRODUCT PATH PASS (Regression <= 5%)**: The real production path (launch.bat -> un-spike.ps1 -> TabletDroid.Host -> Win32WindowEmbedderService) achieves **59.27 FPS** (-1.17% delta vs Standalone). Win32 SetParent child-window embedding is confirmed as production-ready.
 
 ---
 
