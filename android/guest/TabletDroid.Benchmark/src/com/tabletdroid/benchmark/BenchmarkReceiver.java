@@ -44,7 +44,11 @@ public class BenchmarkReceiver extends BroadcastReceiver {
                 BenchmarkState.listener.onResetCommand();
             }
         } else if (ACTION_GET_STATUS.equals(action)) {
-            logCurrentStatus();
+            if (BenchmarkState.listener != null) {
+                BenchmarkState.listener.onGetStatusCommand();
+            } else {
+                logCurrentStatus();
+            }
         }
     }
 

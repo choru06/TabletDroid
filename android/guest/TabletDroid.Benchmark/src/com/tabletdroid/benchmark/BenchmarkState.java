@@ -26,6 +26,7 @@ public class BenchmarkState {
         void onStartCommand(int warmupSec, int measureSec, double velocity);
         void onStopCommand();
         void onResetCommand();
+        void onGetStatusCommand();
     }
 
     public static volatile StateListener listener = null;

@@ -2,6 +2,8 @@ param(
     [string]$AvdName = "TabletDroid_Z13_Play",
     [ValidateSet("Play", "Dev")]
     [string]$Profile = "Play",
+    [ValidateSet(60, 120)]
+    [int]$RefreshHz = 120,
     [int]$Width = 1920,
     [int]$Height = 1200,
     [int]$Dpi = 280,
@@ -30,7 +32,7 @@ $imagePackage = if ($Profile -eq "Play") {
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host " Creating TabletDroid AVD: $AvdName ($Profile Profile)" -ForegroundColor Cyan
 Write-Host " Package: $imagePackage" -ForegroundColor Yellow
-Write-Host " Resolution: ${Width}x${Height} @ ${Dpi}dpi, Memory: ${RamMb}MB" -ForegroundColor Yellow
+Write-Host " Resolution: ${Width}x${Height} @ ${Dpi}dpi (${RefreshHz}Hz), Memory: ${RamMb}MB" -ForegroundColor Yellow
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 $avdManager = (Get-Command avdmanager -ErrorAction SilentlyContinue).Source
@@ -51,22 +53,39 @@ cmd.exe /c "echo no | `"$avdManager`" create avd -n `"$AvdName`" -k `"$imagePack
 $avdPath = "$env:USERPROFILE\.android\avd\$AvdName.avd\config.ini"
 if (Test-Path $avdPath) {
     Write-Host "Customizing config.ini for TabletDroid resolution & memory..." -ForegroundColor Yellow
-    $config = Get-Content $avdPath
-    $config += "hw.lcd.width = $Width"
-    $config += "hw.lcd.height = $Height"
-    $config += "hw.lcd.density = $Dpi"
-    $config += "hw.ramSize = 6144"
-    $config += "hw.gpu.enabled = yes"
-    $config += "hw.gpu.mode = host"
-    $config += "hw.gltransport = pipe"
-    $config += "hw.cpu.ncore = 8"
-    $config += "vm.heapSize = 512M"
-    $config += "hw.keyboard = yes"
-    $config += "hw.mainKeys = no"
-    $config += "hw.accelerometer = yes"
-    $config += "hw.sensors.orientation = yes"
-    $config | Set-Content $avdPath
-    Write-Host "[OK] AVD '$AvdName' ($Profile) created and customized successfully." -ForegroundColor Green
+    $config = [System.Collections.Generic.List[string]]::new()
+    foreach ($line in (Get-Content $avdPath)) {
+        if ($line -notmatch "^(hw\.lcd\.width|hw\.lcd\.height|hw\.lcd\.density|hw\.lcd\.vsync|hw\.ramSize|hw\.gpu\.enabled|hw\.gpu\.mode|hw\.gltransport|hw\.cpu\.ncore|vm\.heapSize|hw\.keyboard|hw\.mainKeys|hw\.accelerometer|hw\.sensors\.orientation)\s*=") {
+            $config.Add($line)
+        }
+    }
+    $config.Add("hw.lcd.width = $Width")
+    $config.Add("hw.lcd.height = $Height")
+    $config.Add("hw.lcd.density = $Dpi")
+    $config.Add("hw.lcd.vsync = $RefreshHz")
+    $config.Add("hw.ramSize = 6144")
+    $config.Add("hw.gpu.enabled = yes")
+    $config.Add("hw.gpu.mode = host")
+    $config.Add("hw.gltransport = pipe")
+    $config.Add("hw.cpu.ncore = 8")
+    $config.Add("vm.heapSize = 512M")
+    $config.Add("hw.keyboard = yes")
+    $config.Add("hw.mainKeys = no")
+    $config.Add("hw.accelerometer = yes")
+    $config.Add("hw.sensors.orientation = yes")
+    Set-Content -Path $avdPath -Value $config -Encoding UTF8
+
+    # Post-creation Fail-Closed Verification
+    $verifiedCfg = Get-Content $avdPath
+    $vGpu = ($verifiedCfg | Select-String "^hw\.gpu\.mode\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+    $vTrans = ($verifiedCfg | Select-String "^hw\.gltransport\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+    $vVsync = ($verifiedCfg | Select-String "^hw\.lcd\.vsync\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+
+    if ($vGpu -ne "host" -or $vTrans -ne "pipe" -or $vVsync -ne "$RefreshHz") {
+        throw "[FATAL] AVD config readback validation failed! vsync='$vVsync', gpu='$vGpu', transport='$vTrans' (Expected: $RefreshHz, host, pipe)"
+    }
+    Write-Host "  [CONFIG_VERIFIED] AVD Hardware Profile: hw.gpu.mode='$vGpu', hw.gltransport='$vTrans', hw.lcd.vsync='$vVsync'" -ForegroundColor Cyan
+    Write-Host "[OK] AVD '$AvdName' ($Profile) created and verified successfully." -ForegroundColor Green
 } else {
-    Write-Warning "config.ini not found at '$avdPath'."
+    throw "[FATAL] config.ini not found at '$avdPath'."
 }

@@ -9,5 +9,5 @@ echo ========================================================
 echo  Launching TabletDroid Spike on Flow Z13...
 echo ========================================================
 
-powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts\windows\run-spike.ps1"
+powershell.exe -ExecutionPolicy Bypass -File "%~dp0scripts\windows\run-spike.ps1" -RefreshHz 120 %*
 pause

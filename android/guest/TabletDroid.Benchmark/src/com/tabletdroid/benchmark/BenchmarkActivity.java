@@ -233,6 +233,16 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
         });
     }
 
+    @Override
+    public void onGetStatusCommand() {
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                emitStatusJson();
+            }
+        });
+    }
+
     private void startBenchmarkSequence(int warmupSec, int measureSec, double velocity) {
         stopAutoScroll();
         scrollView.scrollTo(0, 0);
