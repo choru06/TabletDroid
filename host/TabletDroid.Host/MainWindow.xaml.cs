@@ -179,6 +179,7 @@ public partial class MainWindow : Window
         if (w > 0 && h > 0)
         {
             _windowEmbedder.UpdateViewport(x, y, w, h);
+            _logService.Log(LogCategory.Host, $"[HOST_VIEWPORT_GEOMETRY] Logical=[{EmulatorViewport.ActualWidth:F1}x{EmulatorViewport.ActualHeight:F1}], DpiScale={dpiX:F2}, Physical=[{x},{y},{w},{h}], EmbeddedHwnd=0x{_windowEmbedder.EmbeddedHwnd:X}");
         }
     }
 

@@ -25,6 +25,18 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".InputProbeActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="unspecified"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|density">
+            <intent-filter>
+                <action android:name="com.tabletdroid.benchmark.ACTION_INPUT_PROBE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <receiver
             android:name=".BenchmarkReceiver"
             android:exported="true">
