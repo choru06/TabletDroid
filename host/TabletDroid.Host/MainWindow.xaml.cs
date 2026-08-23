@@ -70,6 +70,19 @@ public partial class MainWindow : Window
         };
         _clipboardPollingTimer.Tick += OnCheckWindowsClipboard;
         _clipboardPollingTimer.Start();
+
+        var args = Environment.GetCommandLineArgs();
+        if (args.Contains("--auto-embed"))
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(1000);
+                await Dispatcher.InvokeAsync(async () =>
+                {
+                    await TriggerEmbedAsync();
+                });
+            });
+        }
     }
 
     private async void OnMainWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -83,35 +96,64 @@ public partial class MainWindow : Window
         await _runtimeBackend.StopAsync();
     }
 
+    public async Task<bool> TriggerEmbedAsync()
+    {
+        var hostHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (hostHwnd == IntPtr.Zero) return false;
+
+        _logService.Log(LogCategory.Host, $"Attempting Host embedding (Host HWND: 0x{hostHwnd:X})...");
+        LogText.Text = "Embedding Android Emulator window into Host...";
+
+        var success = await _windowEmbedder.EmbedWindowAsync(hostHwnd);
+        if (success)
+        {
+            AppGridScrollViewer.Visibility = Visibility.Collapsed;
+            EmulatorViewport.Visibility = Visibility.Visible;
+            BtnToggleEmbed.Content = "Detach Window";
+            UpdateEmbeddedViewport();
+
+            var source = PresentationSource.FromVisual(this);
+            double dpiX = source?.CompositionTarget?.TransformToDevice.M11 ?? 1.0;
+            double dpiY = source?.CompositionTarget?.TransformToDevice.M22 ?? 1.0;
+            var point = EmulatorViewport.TransformToAncestor(this).Transform(new Point(0, 0));
+            int vx = (int)(point.X * dpiX);
+            int vy = (int)(point.Y * dpiY);
+            int vw = (int)(EmulatorViewport.ActualWidth * dpiX);
+            int vh = (int)(EmulatorViewport.ActualHeight * dpiY);
+
+            _logService.Log(LogCategory.Host, $"[HOST_EMBED_SUCCESS] IsEmbedded={_windowEmbedder.IsEmbedded}, EmbeddedHwnd=0x{_windowEmbedder.EmbeddedHwnd:X}, HostHwnd=0x{hostHwnd:X}, Viewport=[{vx},{vy},{vw},{vh}], DpiScale={dpiX:F2}");
+            LogText.Text = "Android Emulator embedded into TabletDroid Host (Zero-Copy).";
+            return true;
+        }
+        else
+        {
+            LogText.Text = "Failed to find/embed emulator window. Ensure runtime is running.";
+            return false;
+        }
+    }
+
+    public bool TriggerDetach()
+    {
+        if (!_windowEmbedder.IsEmbedded) return false;
+
+        _windowEmbedder.DetachWindow();
+        AppGridScrollViewer.Visibility = Visibility.Visible;
+        EmulatorViewport.Visibility = Visibility.Collapsed;
+        BtnToggleEmbed.Content = "Embed Window";
+        LogText.Text = "Detached emulator window to standalone.";
+        _logService.Log(LogCategory.Host, "[HOST_DETACH_SUCCESS] Emulator detached to standalone.");
+        return true;
+    }
+
     private async void OnToggleEmbedClicked(object sender, RoutedEventArgs e)
     {
         if (_windowEmbedder.IsEmbedded)
         {
-            _windowEmbedder.DetachWindow();
-            EmulatorViewport.Visibility = Visibility.Collapsed;
-            AppGridScrollViewer.Visibility = Visibility.Visible;
-            BtnToggleEmbed.Content = "Embed Window";
-            LogText.Text = "Detached emulator window to standalone.";
+            TriggerDetach();
         }
         else
         {
-            var hostHwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-            if (hostHwnd == IntPtr.Zero) return;
-
-            LogText.Text = "Embedding Android Emulator window into Host...";
-            var success = await _windowEmbedder.EmbedWindowAsync(hostHwnd);
-            if (success)
-            {
-                AppGridScrollViewer.Visibility = Visibility.Collapsed;
-                EmulatorViewport.Visibility = Visibility.Visible;
-                BtnToggleEmbed.Content = "Detach Window";
-                UpdateEmbeddedViewport();
-                LogText.Text = "Android Emulator embedded into TabletDroid Host (Zero-Copy).";
-            }
-            else
-            {
-                LogText.Text = "Failed to find/embed emulator window. Ensure runtime is running.";
-            }
+            await TriggerEmbedAsync();
         }
     }
 

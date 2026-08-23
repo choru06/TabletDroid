@@ -2,8 +2,10 @@ param(
     [string]$AvdName = "TabletDroid_Z13_Play",
     [int]$ConsolePort = 5554,
     [int]$GuestPort = 28888,
-    [switch]$LaunchHost = $true
+    $LaunchHost = $true
 )
+
+$shouldLaunchHost = ($LaunchHost -eq $true -or $LaunchHost -eq "true" -or $LaunchHost -eq "1" -or $LaunchHost -eq 1)
 
 $ErrorActionPreference = "Continue"
 
@@ -83,10 +85,35 @@ Write-Host "`n[4/8] Checking Emulator process on $deviceSerial..." -ForegroundCo
 
 $avdConfigFile = "$env:USERPROFILE\.android\avd\$AvdName.avd\config.ini"
 if (Test-Path $avdConfigFile) {
-    $cfgContent = Get-Content $avdConfigFile
-    $gpuModeMatch = ($cfgContent | Select-String "^hw\.gpu\.mode\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
-    $glTransMatch = ($cfgContent | Select-String "^hw\.gltransport\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
-    Write-Host "  [CONFIG] AVD Hardware Profile: hw.gpu.mode='$gpuModeMatch', hw.gltransport='$glTransMatch'" -ForegroundColor Cyan
+    $cfgLines = Get-Content $avdConfigFile
+    $gpuModeMatch = ($cfgLines | Select-String "^hw\.gpu\.mode\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+    $glTransMatch = ($cfgLines | Select-String "^hw\.gltransport\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+
+    if ($gpuModeMatch -ne "host" -or $glTransMatch -ne "pipe") {
+        Write-Host "  [WARN] Non-standard graphics config detected (gpu='$gpuModeMatch', gltransport='$glTransMatch'). Auto-remediating..." -ForegroundColor Yellow
+        $newLines = @()
+        $hasGpu = $false
+        $hasTrans = $false
+        foreach ($line in $cfgLines) {
+            if ($line -match "^hw\.gpu\.mode\s*=") {
+                $newLines += "hw.gpu.mode = host"
+                $hasGpu = $true
+            } elseif ($line -match "^hw\.gltransport\s*=") {
+                $newLines += "hw.gltransport = pipe"
+                $hasTrans = $true
+            } else {
+                $newLines += $line
+            }
+        }
+        if (-not $hasGpu) { $newLines += "hw.gpu.mode = host" }
+        if (-not $hasTrans) { $newLines += "hw.gltransport = pipe" }
+        [System.IO.File]::WriteAllLines($avdConfigFile, $newLines)
+        Write-Host "  [CONFIG_REMEDIATED] Normalized AVD config to hw.gpu.mode=host, hw.gltransport=pipe." -ForegroundColor Green
+    } else {
+        Write-Host "  [CONFIG_VERIFIED] AVD Hardware Profile: hw.gpu.mode='host', hw.gltransport='pipe'" -ForegroundColor Cyan
+    }
+} else {
+    throw "[FATAL] AVD config file '$avdConfigFile' not found!"
 }
 
 $devices = & $adb devices
@@ -154,7 +181,7 @@ foreach ($key in $results.Keys) {
 Write-Host "========================================================`n" -ForegroundColor Cyan
 
 # 9. Host GUI 실행
-if ($LaunchHost) {
+if ($shouldLaunchHost) {
     Write-Host "Launching TabletDroid Host Application (.NET 9)..." -ForegroundColor Cyan
     $hostProj = "$PSScriptRoot\..\..\host\TabletDroid.Host\TabletDroid.Host.csproj"
     $dotnetExe = (Get-Command dotnet.exe -ErrorAction SilentlyContinue).Source
