@@ -1,7 +1,9 @@
 # ==============================================================================
 # TabletDroid Canonical Software Input-to-Frame Latency Benchmark Suite
-# Provenance Hardened Baseline v3:
+# Full Event Accounting & Provenance Hardened Baseline v3:
 # - Pre-run source tree cleanliness check (enforces clean working tree)
+# - Full event accounting in acceptance gate (Expected, Observed, Missing for DOWN/UP)
+# - Discrete Invalid JSON & Invalid Timestamp tracking
 # - Schema v3: Separates Choreographer VSYNC time from Callback execution time
 # - drawStart vs drawContentEnd separation and draw content duration
 # - Fatal per-trial Win32 SetParent embedding verification gate (fail-closed)
@@ -19,6 +21,7 @@ param(
     [string]$AvdName = "TabletDroid_Z13_Play",
     [switch]$SkipBuild = $false,
     [switch]$SkipBoot = $false,
+    [switch]$SelfTestGateOnly = $false,
     [int]$TrialCount = 6,
     [int]$TapCount = 50,
     [int]$DragCount = 10,
@@ -27,6 +30,100 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Function to compute canonical acceptance boolean given gate inputs
+function Compute-CanonicalAcceptance {
+    param(
+        [bool]$SourceTreeClean,
+        [bool]$SourceCommitVerified,
+        [bool]$GuestFingerprintVerified,
+        [bool]$DisplayVerified,
+        [bool]$RefreshPolicyVerified,
+        [bool]$GraphicsTransportVerified,
+        [int]$EmbeddingTrialsVerified,
+        [int]$ExpectedEmbeddingTrials,
+        [bool]$BuildPassed,
+        [bool]$TestsPassed,
+        [int]$StdMissingDown,
+        [int]$StdMissingUp,
+        [int]$EmbMissingDown,
+        [int]$EmbMissingUp,
+        [int]$StdInvalidJson,
+        [int]$StdInvalidTimestamp,
+        [int]$EmbInvalidJson,
+        [int]$EmbInvalidTimestamp,
+        [int]$StdRejected,
+        [int]$EmbRejected
+    )
+
+    $eventIntegrityPassed =
+        ($StdMissingDown -eq 0) -and
+        ($StdMissingUp -eq 0) -and
+        ($EmbMissingDown -eq 0) -and
+        ($EmbMissingUp -eq 0) -and
+        ($StdInvalidJson -eq 0) -and
+        ($StdInvalidTimestamp -eq 0) -and
+        ($EmbInvalidJson -eq 0) -and
+        ($EmbInvalidTimestamp -eq 0) -and
+        ($StdRejected -eq 0) -and
+        ($EmbRejected -eq 0)
+
+    $embeddingPassed = ($EmbeddingTrialsVerified -eq $ExpectedEmbeddingTrials -and $ExpectedEmbeddingTrials -gt 0)
+
+    $allPassed =
+        $SourceTreeClean -and
+        $SourceCommitVerified -and
+        $GuestFingerprintVerified -and
+        $DisplayVerified -and
+        $RefreshPolicyVerified -and
+        $GraphicsTransportVerified -and
+        $embeddingPassed -and
+        $BuildPassed -and
+        $TestsPassed -and
+        $eventIntegrityPassed
+
+    return @{
+        CanonicalPass = $allPassed
+        EventIntegrityPassed = $eventIntegrityPassed
+        EmbeddingPassed = $embeddingPassed
+        CanonicalResult = if ($allPassed) { "PASS" } else { "FAIL" }
+    }
+}
+
+# Self-Test Gate Logic (when requested)
+if ($SelfTestGateOnly) {
+    Write-Host "Running Acceptance Gate Self-Test..." -ForegroundColor Yellow
+    
+    # 1. Normal PASS case
+    $passCase = Compute-CanonicalAcceptance -SourceTreeClean $true -SourceCommitVerified $true -GuestFingerprintVerified $true `
+        -DisplayVerified $true -RefreshPolicyVerified $true -GraphicsTransportVerified $true -EmbeddingTrialsVerified 6 `
+        -ExpectedEmbeddingTrials 6 -BuildPassed $true -TestsPassed $true -StdMissingDown 0 -StdMissingUp 0 -EmbMissingDown 0 `
+        -EmbMissingUp 0 -StdInvalidJson 0 -StdInvalidTimestamp 0 -EmbInvalidJson 0 -EmbInvalidTimestamp 0 -StdRejected 0 -EmbRejected 0
+    if ($passCase.CanonicalResult -ne "PASS" -or -not $passCase.EventIntegrityPassed) {
+        throw "Self-Test Failed: Normal PASS case did not return PASS!"
+    }
+
+    # 2. Missing DOWN failure case
+    $failMissingDown = Compute-CanonicalAcceptance -SourceTreeClean $true -SourceCommitVerified $true -GuestFingerprintVerified $true `
+        -DisplayVerified $true -RefreshPolicyVerified $true -GraphicsTransportVerified $true -EmbeddingTrialsVerified 6 `
+        -ExpectedEmbeddingTrials 6 -BuildPassed $true -TestsPassed $true -StdMissingDown 1 -StdMissingUp 0 -EmbMissingDown 0 `
+        -EmbMissingUp 0 -StdInvalidJson 0 -StdInvalidTimestamp 0 -EmbInvalidJson 0 -EmbInvalidTimestamp 0 -StdRejected 0 -EmbRejected 0
+    if ($failMissingDown.CanonicalResult -ne "FAIL" -or $failMissingDown.EventIntegrityPassed) {
+        throw "Self-Test Failed: Missing DOWN case did not return FAIL!"
+    }
+
+    # 3. Invalid JSON failure case
+    $failInvalidJson = Compute-CanonicalAcceptance -SourceTreeClean $true -SourceCommitVerified $true -GuestFingerprintVerified $true `
+        -DisplayVerified $true -RefreshPolicyVerified $true -GraphicsTransportVerified $true -EmbeddingTrialsVerified 6 `
+        -ExpectedEmbeddingTrials 6 -BuildPassed $true -TestsPassed $true -StdMissingDown 0 -StdMissingUp 0 -EmbMissingDown 0 `
+        -EmbMissingUp 0 -StdInvalidJson 1 -StdInvalidTimestamp 0 -EmbInvalidJson 0 -EmbInvalidTimestamp 0 -StdRejected 1 -EmbRejected 0
+    if ($failInvalidJson.CanonicalResult -ne "FAIL" -or $failInvalidJson.EventIntegrityPassed) {
+        throw "Self-Test Failed: Invalid JSON case did not return FAIL!"
+    }
+
+    Write-Host "[OK] Acceptance Gate Self-Test PASSED: All logical assertions verified." -ForegroundColor Green
+    return
+}
 
 # -----------------------------------------------------------------------------
 # STEP 0: Pre-Run Source Provenance & Cleanliness Verification
@@ -68,7 +165,7 @@ $sessionOutputDir = "$OutputDir\$timestamp"
 New-Item -ItemType Directory -Path $sessionOutputDir -Force | Out-Null
 
 Write-Host "================================================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark (Provenance Hardened)" -ForegroundColor Cyan
+Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark (Accounting Hardened)" -ForegroundColor Cyan
 Write-Host " Timestamp         : $timestamp" -ForegroundColor Cyan
 Write-Host " Source Git Commit : $sourceCommit (Clean: $(-not $sourceTreeDirty))" -ForegroundColor Cyan
 Write-Host " Counter-Balance   : $TrialCount Trials (Alternating AB / BA Order)" -ForegroundColor Cyan
@@ -721,21 +818,39 @@ for ($t = 1; $t -le $TrialCount; $t++) {
         EmbeddedHwnd = $embSummary.EmbeddedHwnd
         PhysicalViewport = $embSummary.PhysicalViewport
 
+        Std_ExpectedDown = $stdSummary.ExpectedDown
+        Std_ObservedDown = $stdSummary.ObservedDown
+        Std_MissingDown = $stdSummary.MissingDown
+        Std_ExpectedUp = $stdSummary.ExpectedUp
+        Std_ObservedUp = $stdSummary.ObservedUp
+        Std_MissingUp = $stdSummary.MissingUp
+        Std_InvalidJson = $stdSummary.InvalidJsonCount
+        Std_InvalidTimestamp = $stdSummary.InvalidTimestampCount
+        Std_Valid = $stdSummary.TotalValidRecords
+        Std_Rejected = $stdSummary.RejectedCount
+
+        Emb_ExpectedDown = $embSummary.ExpectedDown
+        Emb_ObservedDown = $embSummary.ObservedDown
+        Emb_MissingDown = $embSummary.MissingDown
+        Emb_ExpectedUp = $embSummary.ExpectedUp
+        Emb_ObservedUp = $embSummary.ObservedUp
+        Emb_MissingUp = $embSummary.MissingUp
+        Emb_InvalidJson = $embSummary.InvalidJsonCount
+        Emb_InvalidTimestamp = $embSummary.InvalidTimestampCount
+        Emb_Valid = $embSummary.TotalValidRecords
+        Emb_Rejected = $embSummary.RejectedCount
+
         Std_Down_P50 = $stdSummary.Down_EventToDrawStart.P50
         Std_Down_P95 = $stdSummary.Down_EventToDrawStart.P95
         Std_Down_P99 = $stdSummary.Down_EventToDrawStart.P99
         Std_Move_P50 = $stdSummary.Move_EventToDrawStart.P50
         Std_Move_P95 = $stdSummary.Move_EventToDrawStart.P95
-        Std_Valid = $stdSummary.TotalValidRecords
-        Std_Rejected = $stdSummary.RejectedCount
 
         Emb_Down_P50 = $embSummary.Down_EventToDrawStart.P50
         Emb_Down_P95 = $embSummary.Down_EventToDrawStart.P95
         Emb_Down_P99 = $embSummary.Down_EventToDrawStart.P99
         Emb_Move_P50 = $embSummary.Move_EventToDrawStart.P50
         Emb_Move_P95 = $embSummary.Move_EventToDrawStart.P95
-        Emb_Valid = $embSummary.TotalValidRecords
-        Emb_Rejected = $embSummary.RejectedCount
     })
 }
 
@@ -821,6 +936,33 @@ $allEmbeddedTrials | ForEach-Object { $pooledEmbRecords.AddRange($_.RawRecords) 
 $pooledEmbDown = Get-Stats -Values ($pooledEmbRecords | Where-Object { $_.action -eq "DOWN" } | ForEach-Object { $_.eventToDrawStartMs }) -Name "Pooled_DOWN_EventToDrawStart"
 $pooledEmbMove = Get-Stats -Values ($pooledEmbRecords | Where-Object { $_.action -eq "MOVE" } | ForEach-Object { $_.eventToDrawStartMs }) -Name "Pooled_MOVE_EventToDrawStart"
 
+# Dynamic Aggregate Totals
+$totStdExpectedDown = ($allStandaloneTrials | Measure-Object -Property ExpectedDown -Sum).Sum
+$totStdObservedDown = ($allStandaloneTrials | Measure-Object -Property ObservedDown -Sum).Sum
+$totStdMissingDown = ($allStandaloneTrials | Measure-Object -Property MissingDown -Sum).Sum
+
+$totStdExpectedUp = ($allStandaloneTrials | Measure-Object -Property ExpectedUp -Sum).Sum
+$totStdObservedUp = ($allStandaloneTrials | Measure-Object -Property ObservedUp -Sum).Sum
+$totStdMissingUp = ($allStandaloneTrials | Measure-Object -Property MissingUp -Sum).Sum
+
+$totStdInvalidJson = ($allStandaloneTrials | Measure-Object -Property InvalidJsonCount -Sum).Sum
+$totStdInvalidTimestamp = ($allStandaloneTrials | Measure-Object -Property InvalidTimestampCount -Sum).Sum
+$totStdRejected = ($allStandaloneTrials | Measure-Object -Property RejectedCount -Sum).Sum
+$totStdValid = ($allStandaloneTrials | Measure-Object -Property TotalValidRecords -Sum).Sum
+
+$totEmbExpectedDown = ($allEmbeddedTrials | Measure-Object -Property ExpectedDown -Sum).Sum
+$totEmbObservedDown = ($allEmbeddedTrials | Measure-Object -Property ObservedDown -Sum).Sum
+$totEmbMissingDown = ($allEmbeddedTrials | Measure-Object -Property MissingDown -Sum).Sum
+
+$totEmbExpectedUp = ($allEmbeddedTrials | Measure-Object -Property ExpectedUp -Sum).Sum
+$totEmbObservedUp = ($allEmbeddedTrials | Measure-Object -Property ObservedUp -Sum).Sum
+$totEmbMissingUp = ($allEmbeddedTrials | Measure-Object -Property MissingUp -Sum).Sum
+
+$totEmbInvalidJson = ($allEmbeddedTrials | Measure-Object -Property InvalidJsonCount -Sum).Sum
+$totEmbInvalidTimestamp = ($allEmbeddedTrials | Measure-Object -Property InvalidTimestampCount -Sum).Sum
+$totEmbRejected = ($allEmbeddedTrials | Measure-Object -Property RejectedCount -Sum).Sum
+$totEmbValid = ($allEmbeddedTrials | Measure-Object -Property TotalValidRecords -Sum).Sum
+
 # Synthesis & Comparison Table
 function Compute-Delta {
     param([double]$Standalone, [double]$Embedded)
@@ -866,10 +1008,35 @@ Add-CompRow -MetricName "Pooled MOVE Event->DrawStart P50" -StdVal $pooledStdMov
 Add-CompRow -MetricName "Pooled MOVE Event->DrawStart P95" -StdVal $pooledStdMove.P95 -EmbVal $pooledEmbMove.P95
 Add-CompRow -MetricName "Pooled MOVE Event->DrawStart P99" -StdVal $pooledStdMove.P99 -EmbVal $pooledEmbMove.P99
 
-$totStdValid = ($allStandaloneTrials | Measure-Object -Property TotalValidRecords -Sum).Sum
-$totEmbValid = ($allEmbeddedTrials | Measure-Object -Property TotalValidRecords -Sum).Sum
-$totStdRejected = ($allStandaloneTrials | Measure-Object -Property RejectedCount -Sum).Sum
-$totEmbRejected = ($allEmbeddedTrials | Measure-Object -Property RejectedCount -Sum).Sum
+$compRows.Add([PSCustomObject]@{
+    Metric = "Total Expected DOWN Events (6 Trials)"
+    Standalone = "$totStdExpectedDown"
+    Embedded = "$totEmbExpectedDown"
+    Delta_ms = "$($totEmbExpectedDown - $totStdExpectedDown)"
+    Delta_pct = "N/A"
+    RawDeltaMs = 0.0
+    RawDeltaPct = 0.0
+})
+
+$compRows.Add([PSCustomObject]@{
+    Metric = "Total Observed DOWN Events (6 Trials)"
+    Standalone = "$totStdObservedDown"
+    Embedded = "$totEmbObservedDown"
+    Delta_ms = "$($totEmbObservedDown - $totStdObservedDown)"
+    Delta_pct = "N/A"
+    RawDeltaMs = 0.0
+    RawDeltaPct = 0.0
+})
+
+$compRows.Add([PSCustomObject]@{
+    Metric = "Total Missing DOWN Events (6 Trials)"
+    Standalone = "$totStdMissingDown"
+    Embedded = "$totEmbMissingDown"
+    Delta_ms = "$($totEmbMissingDown - $totStdMissingDown)"
+    Delta_pct = "N/A"
+    RawDeltaMs = 0.0
+    RawDeltaPct = 0.0
+})
 
 $compRows.Add([PSCustomObject]@{
     Metric = "Total Valid Records (6 Trials)"
@@ -908,11 +1075,35 @@ $conditionSummary = @{
         EmbeddedSecondMeanP50 = $embSecondP50
         EmbeddedOrderDelta = $embOrderDelta
     }
+    EventIntegrity = @{
+        Standalone = @{
+            ExpectedDown = $totStdExpectedDown
+            ObservedDown = $totStdObservedDown
+            MissingDown = $totStdMissingDown
+            ExpectedUp = $totStdExpectedUp
+            ObservedUp = $totStdObservedUp
+            MissingUp = $totStdMissingUp
+            InvalidJson = $totStdInvalidJson
+            InvalidTimestamp = $totStdInvalidTimestamp
+            Rejected = $totStdRejected
+        }
+        Embedded = @{
+            ExpectedDown = $totEmbExpectedDown
+            ObservedDown = $totEmbObservedDown
+            MissingDown = $totEmbMissingDown
+            ExpectedUp = $totEmbExpectedUp
+            ObservedUp = $totEmbObservedUp
+            MissingUp = $totEmbMissingUp
+            InvalidJson = $totEmbInvalidJson
+            InvalidTimestamp = $totEmbInvalidTimestamp
+            Rejected = $totEmbRejected
+        }
+    }
 }
 $conditionSummary | ConvertTo-Json -Depth 6 | Set-Content -Path "$sessionOutputDir\condition-summary.json" -Encoding UTF8
 
 # -----------------------------------------------------------------------------
-# STEP 6: Dynamic Acceptance & Provenance Gate Synthesis (acceptance.json)
+# STEP 6: Dynamic Acceptance & Full Event Accounting Synthesis (acceptance.json)
 # -----------------------------------------------------------------------------
 $gateSourceTreeClean = (-not $sourceTreeDirty)
 $gateSourceCommit = ($sourceCommit.Length -eq 40)
@@ -921,14 +1112,34 @@ $gateDisplay = ($readWmSize -match "1920x1200" -and $readWmDensity -match "280")
 $gateRefreshPolicy = ($readPeakRefresh -match "^120" -and $readMinRefresh -match "^120" -and $readVsync -eq "120")
 $gateGraphicsTransport = ($avdGpuMode -eq "host" -and $avdGlTransport -eq "pipe" -and $avdVsync -eq "120")
 $embeddedVerifiedCount = ($allEmbeddedTrials | Where-Object { $_.EmbeddingVerified -eq $true }).Count
-$gateEmbeddingTrials = ($embeddedVerifiedCount -eq $TrialCount)
 $gateBuild = $solutionBuildPassed
 $gateTests = ($unitTestsPassed -and $testCountVerified)
-$gateEventIntegrity = ($totStdRejected -eq 0 -and $totEmbRejected -eq 0)
 
-$canonicalPass = $gateSourceTreeClean -and $gateSourceCommit -and $gateGuestFingerprint -and $gateDisplay -and $gateRefreshPolicy -and $gateGraphicsTransport -and $gateEmbeddingTrials -and $gateBuild -and $gateTests -and $gateEventIntegrity
+$acceptanceResultObj = Compute-CanonicalAcceptance `
+    -SourceTreeClean $gateSourceTreeClean `
+    -SourceCommitVerified $gateSourceCommit `
+    -GuestFingerprintVerified $gateGuestFingerprint `
+    -DisplayVerified $gateDisplay `
+    -RefreshPolicyVerified $gateRefreshPolicy `
+    -GraphicsTransportVerified $gateGraphicsTransport `
+    -EmbeddingTrialsVerified $embeddedVerifiedCount `
+    -ExpectedEmbeddingTrials $TrialCount `
+    -BuildPassed $gateBuild `
+    -TestsPassed $gateTests `
+    -StdMissingDown $totStdMissingDown `
+    -StdMissingUp $totStdMissingUp `
+    -EmbMissingDown $totEmbMissingDown `
+    -EmbMissingUp $totEmbMissingUp `
+    -StdInvalidJson $totStdInvalidJson `
+    -StdInvalidTimestamp $totStdInvalidTimestamp `
+    -EmbInvalidJson $totEmbInvalidJson `
+    -EmbInvalidTimestamp $totEmbInvalidTimestamp `
+    -StdRejected $totStdRejected `
+    -EmbRejected $totEmbRejected
 
-$canonicalResult = if ($canonicalPass) { "PASS" } else { "FAIL" }
+$canonicalPass = $acceptanceResultObj.CanonicalPass
+$canonicalResult = $acceptanceResultObj.CanonicalResult
+$gateEventIntegrity = $acceptanceResultObj.EventIntegrityPassed
 
 $acceptanceData = @{
     Timestamp = $timestamp
@@ -944,9 +1155,32 @@ $acceptanceData = @{
     BuildPassed = $gateBuild
     TestsPassed = $gateTests
     TestCount = $testTotal
+
+    StandaloneExpectedDown = $totStdExpectedDown
+    StandaloneObservedDown = $totStdObservedDown
+    StandaloneMissingDown = $totStdMissingDown
+
+    StandaloneExpectedUp = $totStdExpectedUp
+    StandaloneObservedUp = $totStdObservedUp
+    StandaloneMissingUp = $totStdMissingUp
+
+    EmbeddedExpectedDown = $totEmbExpectedDown
+    EmbeddedObservedDown = $totEmbObservedDown
+    EmbeddedMissingDown = $totEmbMissingDown
+
+    EmbeddedExpectedUp = $totEmbExpectedUp
+    EmbeddedObservedUp = $totEmbObservedUp
+    EmbeddedMissingUp = $totEmbMissingUp
+
+    StandaloneInvalidJsonRecords = $totStdInvalidJson
+    StandaloneInvalidTimestampRecords = $totStdInvalidTimestamp
+
+    EmbeddedInvalidJsonRecords = $totEmbInvalidJson
+    EmbeddedInvalidTimestampRecords = $totEmbInvalidTimestamp
+
+    TotalRejectedRecords = ($totStdRejected + $totEmbRejected)
     EventIntegrityPassed = $gateEventIntegrity
     TotalValidRecords = ($totStdValid + $totEmbValid)
-    TotalRejectedRecords = ($totStdRejected + $totEmbRejected)
 }
 $acceptanceData | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\acceptance.json" -Encoding UTF8
 
@@ -968,8 +1202,8 @@ $methodologyMeta | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDi
 # STEP 7: Display Summary Tables
 # -----------------------------------------------------------------------------
 Write-Host "`n================================================================================" -ForegroundColor Cyan
-Write-Host " CANONICAL HARDENED INPUT LATENCY A/B COMPARISON TABLE (Provenance Hardened, 6 Trials)" -ForegroundColor Cyan
-Write-Host " Acceptance Status : $canonicalResult (Clean Tree: $gateSourceTreeClean, Fingerprint: $gateGuestFingerprint)" -ForegroundColor Yellow
+Write-Host " CANONICAL HARDENED INPUT LATENCY A/B COMPARISON TABLE (Accounting Hardened, 6 Trials)" -ForegroundColor Cyan
+Write-Host " Acceptance Status : $canonicalResult (Clean Tree: $gateSourceTreeClean, EventIntegrity: $gateEventIntegrity)" -ForegroundColor Yellow
 Write-Host "================================================================================" -ForegroundColor Cyan
 
 $fmtHeader = "{0,-44} | {1,-14} | {2,-14} | {3,-12} | {4,-10}"
@@ -995,7 +1229,16 @@ Write-Host "  - GraphicsTransportVerified: $gateGraphicsTransport" -ForegroundCo
 Write-Host "  - EmbeddingTrialsVerified  : $embeddedVerifiedCount / $TrialCount" -ForegroundColor White
 Write-Host "  - BuildPassed              : $gateBuild" -ForegroundColor White
 Write-Host "  - TestsPassed              : $gateTests ($testPassedCount / $testTotal)" -ForegroundColor White
-Write-Host "  - EventIntegrityPassed     : $gateEventIntegrity (Rejected: $($totStdRejected + $totEmbRejected))" -ForegroundColor White
+Write-Host "  - EventIntegrityPassed     : $gateEventIntegrity" -ForegroundColor White
+
+Write-Host "`n[EVENT ACCOUNTING AUDIT]" -ForegroundColor Yellow
+Write-Host "  Standalone DOWN : Expected $totStdExpectedDown / Observed $totStdObservedDown / Missing $totStdMissingDown" -ForegroundColor White
+Write-Host "  Standalone UP   : Expected $totStdExpectedUp / Observed $totStdObservedUp / Missing $totStdMissingUp" -ForegroundColor White
+Write-Host "  Embedded DOWN   : Expected $totEmbExpectedDown / Observed $totEmbObservedDown / Missing $totEmbMissingDown" -ForegroundColor White
+Write-Host "  Embedded UP     : Expected $totEmbExpectedUp / Observed $totEmbObservedUp / Missing $totEmbMissingUp" -ForegroundColor White
+Write-Host "  Invalid JSON    : Standalone $totStdInvalidJson / Embedded $totEmbInvalidJson" -ForegroundColor White
+Write-Host "  Invalid Monotonic: Standalone $totStdInvalidTimestamp / Embedded $totEmbInvalidTimestamp" -ForegroundColor White
+Write-Host "  Total Rejected  : $($totStdRejected + $totEmbRejected)" -ForegroundColor White
 
 Write-Host "`n[ARTIFACTS SAVED] $sessionOutputDir" -ForegroundColor Green
 Write-Host " - acceptance.json" -ForegroundColor Green
