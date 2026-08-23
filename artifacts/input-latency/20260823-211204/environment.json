@@ -1,0 +1,17 @@
+﻿{
+    "GlTransport":  "pipe",
+    "TapCount":  60,
+    "TargetActivity":  "com.tabletdroid.benchmark/.InputProbeActivity",
+    "Timestamp":  "20260823-211204",
+    "HostHardware":  "ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA RTX 3050 Ti Laptop GPU, 16GB RAM)",
+    "StandaloneValidRecords":  1089,
+    "EmbeddedValidRecords":  1101,
+    "DragCount":  15,
+    "HostOS":  "Windows 11 Home 23H2 (Hypervisor: WHPX)",
+    "Embedding":  "Win32 SetParent Child Window",
+    "GpuMode":  "host",
+    "RefreshRate":  "120 Hz (hw.lcd.vsync=120, peak_refresh_rate=120, min_refresh_rate=120)",
+    "TargetPackage":  "com.tabletdroid.benchmark",
+    "Resolution":  "1920x1200 @ 280dpi",
+    "SwipeCount":  15
+}
