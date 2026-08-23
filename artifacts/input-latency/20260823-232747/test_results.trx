@@ -1,0 +1,142 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="4b1582d0-fa32-48f2-a5c1-075f70f74b78" name="o1o6o@초루의-FLOWZ13 2026-08-23 23:27:59" runUser="초루의-FLOWZ13\o1o6o" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-08-23T23:27:59.2030360+09:00" queuing="2026-08-23T23:27:59.2030364+09:00" start="2026-08-23T23:27:58.1524021+09:00" finish="2026-08-23T23:27:59.6409071+09:00" />
+  <TestSettings name="default" id="b14ee34e-8760-4c41-9804-d60cb9b38fb7">
+    <Deployment runDeploymentRoot="o1o6o_초루의-FLOWZ13_2026-08-23_23_27_59" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="7b1b2eb8-941c-4528-aed2-cc536b10acdf" testId="1c7a0fe0-7196-b625-5c55-2485e7f58662" testName="TabletDroid.Tests.DiagnosticsAndRotationTests.RotationBridge_AppliesUserRotation_WhenPolicyIsPortraitPreferred" computerName="초루의-FLOWZ13" duration="00:00:00.1247603" startTime="2026-08-23T23:27:59.2318346+09:00" endTime="2026-08-23T23:27:59.2318349+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7b1b2eb8-941c-4528-aed2-cc536b10acdf" />
+    <UnitTestResult executionId="9dbd4b1f-b730-44a1-a102-c26fe4b8cc55" testId="ecfc34f1-4362-5b41-42fd-030e54caaca5" testName="TabletDroid.Tests.ClipboardBridgeTests.HandleWindowsClipboardChanged_SuppressesEcho_WhenHashMatchesLastSent" computerName="초루의-FLOWZ13" duration="00:00:00.2859155" startTime="2026-08-23T23:27:59.2310885+09:00" endTime="2026-08-23T23:27:59.2310888+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9dbd4b1f-b730-44a1-a102-c26fe4b8cc55" />
+    <UnitTestResult executionId="ead3d8fd-499b-4a4b-9832-d5c2707f80d7" testId="d9a78669-7762-7e2c-22bf-10994ddde10d" testName="TabletDroid.Tests.ProtocolSerializationTests.HandshakeMessage_SerializesCorrectly" computerName="초루의-FLOWZ13" duration="00:00:00.0050143" startTime="2026-08-23T23:27:59.1623419+09:00" endTime="2026-08-23T23:27:59.1623419+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ead3d8fd-499b-4a4b-9832-d5c2707f80d7" />
+    <UnitTestResult executionId="f1a397f4-ca63-47e1-9c2f-c6c52fc34ff2" testId="1ef10ed6-ef93-0ee6-06b5-3c197ddcbbce" testName="TabletDroid.Tests.BenchmarkMetricsTests.PercentileCalculation_IsExact" computerName="초루의-FLOWZ13" duration="00:00:00.1361405" startTime="2026-08-23T23:27:59.0876287+09:00" endTime="2026-08-23T23:27:59.0876288+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f1a397f4-ca63-47e1-9c2f-c6c52fc34ff2" />
+    <UnitTestResult executionId="a38f0f76-ab98-4cf9-91d1-47288b51064b" testId="2767ffb1-8e03-755f-2a77-ef1c26f08056" testName="TabletDroid.Tests.DebouncedOrientationWatcherTests.OrientationWatcher_IgnoresDuplicateOrientation" computerName="초루의-FLOWZ13" duration="00:00:00.3717509" startTime="2026-08-23T23:27:59.3198315+09:00" endTime="2026-08-23T23:27:59.3198320+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="a38f0f76-ab98-4cf9-91d1-47288b51064b" />
+    <UnitTestResult executionId="5e10b389-1250-4128-b663-09b1eb765a8b" testId="1b6000d9-1020-e866-2f10-a2afe8a0f7c2" testName="TabletDroid.Tests.DiagnosticsAndRotationTests.DiagnosticLogService_WritesLogFilesSuccessfully" computerName="초루의-FLOWZ13" duration="00:00:00.1617905" startTime="2026-08-23T23:27:59.1623726+09:00" endTime="2026-08-23T23:27:59.1623726+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5e10b389-1250-4128-b663-09b1eb765a8b" />
+    <UnitTestResult executionId="edb90c3f-9764-4fb8-9d58-e0fef609570e" testId="c71e55b1-0754-230e-2be3-a25875937207" testName="TabletDroid.Tests.RuntimeStateMachineTests.InvalidTransition_Fails" computerName="초루의-FLOWZ13" duration="00:00:00.0004148" startTime="2026-08-23T23:27:59.1620566+09:00" endTime="2026-08-23T23:27:59.1620569+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="edb90c3f-9764-4fb8-9d58-e0fef609570e" />
+    <UnitTestResult executionId="731931a6-c2a3-4f48-9c76-25260c31a60b" testId="c56bcb60-d88e-4f07-ca5b-02d8cb9a4535" testName="TabletDroid.Tests.DiagnosticsAndRotationTests.RotationBridge_AppliesUserRotation_WhenSynchronizingPhysicalOrientation" computerName="초루의-FLOWZ13" duration="00:00:00.0017770" startTime="2026-08-23T23:27:59.2336979+09:00" endTime="2026-08-23T23:27:59.2336982+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="731931a6-c2a3-4f48-9c76-25260c31a60b" />
+    <UnitTestResult executionId="041b67df-9d09-48b2-ad5f-db282498c551" testId="cbd4b062-062b-af62-1cfe-30864060d127" testName="TabletDroid.Tests.WindowEmbedderTests.ComputeEmbeddedStyle_StripsPopupAndCaption_AndAddsChildAndVisible" computerName="초루의-FLOWZ13" duration="00:00:00.1374772" startTime="2026-08-23T23:27:59.0852086+09:00" endTime="2026-08-23T23:27:59.0852252+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="041b67df-9d09-48b2-ad5f-db282498c551" />
+    <UnitTestResult executionId="58408daf-8733-4134-a55f-bf4466c25053" testId="471c3253-27cc-8849-1315-62b8e85224cb" testName="TabletDroid.Tests.ProtocolSerializationTests.ClipboardSyncMessage_WithReplyTo_SerializesAndDeserializesCorrectly" computerName="초루의-FLOWZ13" duration="00:00:00.1514523" startTime="2026-08-23T23:27:59.1621520+09:00" endTime="2026-08-23T23:27:59.1621521+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="58408daf-8733-4134-a55f-bf4466c25053" />
+    <UnitTestResult executionId="18fb394b-3669-425a-96ca-7d2eb2d6bad0" testId="29f29237-f60c-b3fa-eb3d-faf6a277223f" testName="TabletDroid.Tests.BenchmarkMetricsTests.MultiTrialStatistics_CalculatesMedianMinMaxStdDev" computerName="초루의-FLOWZ13" duration="00:00:00.0117007" startTime="2026-08-23T23:27:59.1621998+09:00" endTime="2026-08-23T23:27:59.1621999+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="18fb394b-3669-425a-96ca-7d2eb2d6bad0" />
+    <UnitTestResult executionId="ac84b7b1-019e-4a3e-88ca-3e609a0e9341" testId="9b7525b2-2534-576c-d8d9-8894193d9a51" testName="TabletDroid.Tests.ProtocolSerializationTests.LaunchAppResponse_Correlation_Matches" computerName="초루의-FLOWZ13" duration="00:00:00.0021588" startTime="2026-08-23T23:27:59.1622406+09:00" endTime="2026-08-23T23:27:59.1622406+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ac84b7b1-019e-4a3e-88ca-3e609a0e9341" />
+    <UnitTestResult executionId="0cf36aa1-bdd7-4db5-a094-781db9b886cc" testId="6b78e0f5-6115-a2ae-35a6-be0abd8a577e" testName="TabletDroid.Tests.RuntimeStateMachineTests.ValidTransitions_Succeed" computerName="초루의-FLOWZ13" duration="00:00:00.1362453" startTime="2026-08-23T23:27:59.0879491+09:00" endTime="2026-08-23T23:27:59.0879492+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0cf36aa1-bdd7-4db5-a094-781db9b886cc" />
+    <UnitTestResult executionId="f868cbf3-5219-48b6-8b66-138607bbd9b2" testId="361d1f8b-c4d7-73eb-a20d-45333f56a078" testName="TabletDroid.Tests.ClipboardBridgeTests.ComputeHash_ProducesConsistentSha256" computerName="초루의-FLOWZ13" duration="00:00:00.0028090" startTime="2026-08-23T23:27:59.2420029+09:00" endTime="2026-08-23T23:27:59.2420034+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f868cbf3-5219-48b6-8b66-138607bbd9b2" />
+    <UnitTestResult executionId="32df7495-53c3-4113-aa64-0872d277f778" testId="5034bb9b-697c-54ad-02ff-5b2f1974e873" testName="TabletDroid.Tests.WindowEmbedderTests.ComputeEmbeddedExStyle_StripsAppWindowAndBorders_AndAddsNoParentNotify" computerName="초루의-FLOWZ13" duration="00:00:00.0002370" startTime="2026-08-23T23:27:59.1618677+09:00" endTime="2026-08-23T23:27:59.1618677+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="32df7495-53c3-4113-aa64-0872d277f778" />
+    <UnitTestResult executionId="0074bdbf-41aa-4838-b4d2-7a1f7b61d55a" testId="24f5b550-fcea-9f41-4bc8-b060c6c23167" testName="TabletDroid.Tests.ClipboardBridgeTests.HandleWindowsClipboardChanged_SendsToGuest_WhenTextIsNew" computerName="초루의-FLOWZ13" duration="00:00:00.0078889" startTime="2026-08-23T23:27:59.2390629+09:00" endTime="2026-08-23T23:27:59.2390632+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0074bdbf-41aa-4838-b4d2-7a1f7b61d55a" />
+    <UnitTestResult executionId="5994a068-1fa5-449a-95f9-4f91bcd8aaf5" testId="61d61233-e8a6-f81b-9296-c9eaba8c4822" testName="TabletDroid.Tests.DebouncedOrientationWatcherTests.OrientationWatcher_DebouncesRapidEvents" computerName="초루의-FLOWZ13" duration="00:00:00.2633282" startTime="2026-08-23T23:27:59.5844268+09:00" endTime="2026-08-23T23:27:59.5844271+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5994a068-1fa5-449a-95f9-4f91bcd8aaf5" />
+    <UnitTestResult executionId="83953482-5a8b-4590-abe2-dfd59e49c582" testId="f00d7e1c-cda6-9768-a839-4fc62b89688c" testName="TabletDroid.Tests.BenchmarkMetricsTests.LowFrameSample_IsClassifiedAsInsufficientSamples" computerName="초루의-FLOWZ13" duration="00:00:00.0002078" startTime="2026-08-23T23:27:59.1623130+09:00" endTime="2026-08-23T23:27:59.1623130+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="83953482-5a8b-4590-abe2-dfd59e49c582" />
+    <UnitTestResult executionId="9502a4fc-e5d5-4c5d-a15a-7c4ea4c41697" testId="6cfcd7a0-961b-0024-e381-b60e823b2478" testName="TabletDroid.Tests.BenchmarkMetricsTests.ThroughputAndLatencyFps_AreDistinguishedCorrectly" computerName="초루의-FLOWZ13" duration="00:00:00.0028359" startTime="2026-08-23T23:27:59.1622788+09:00" endTime="2026-08-23T23:27:59.1622789+09:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9502a4fc-e5d5-4c5d-a15a-7c4ea4c41697" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="TabletDroid.Tests.BenchmarkMetricsTests.LowFrameSample_IsClassifiedAsInsufficientSamples" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="f00d7e1c-cda6-9768-a839-4fc62b89688c">
+      <Execution id="83953482-5a8b-4590-abe2-dfd59e49c582" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.BenchmarkMetricsTests" name="LowFrameSample_IsClassifiedAsInsufficientSamples" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.DebouncedOrientationWatcherTests.OrientationWatcher_IgnoresDuplicateOrientation" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="2767ffb1-8e03-755f-2a77-ef1c26f08056">
+      <Execution id="a38f0f76-ab98-4cf9-91d1-47288b51064b" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.DebouncedOrientationWatcherTests" name="OrientationWatcher_IgnoresDuplicateOrientation" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.BenchmarkMetricsTests.MultiTrialStatistics_CalculatesMedianMinMaxStdDev" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="29f29237-f60c-b3fa-eb3d-faf6a277223f">
+      <Execution id="18fb394b-3669-425a-96ca-7d2eb2d6bad0" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.BenchmarkMetricsTests" name="MultiTrialStatistics_CalculatesMedianMinMaxStdDev" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.ProtocolSerializationTests.HandshakeMessage_SerializesCorrectly" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="d9a78669-7762-7e2c-22bf-10994ddde10d">
+      <Execution id="ead3d8fd-499b-4a4b-9832-d5c2707f80d7" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.ProtocolSerializationTests" name="HandshakeMessage_SerializesCorrectly" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.BenchmarkMetricsTests.ThroughputAndLatencyFps_AreDistinguishedCorrectly" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="6cfcd7a0-961b-0024-e381-b60e823b2478">
+      <Execution id="9502a4fc-e5d5-4c5d-a15a-7c4ea4c41697" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.BenchmarkMetricsTests" name="ThroughputAndLatencyFps_AreDistinguishedCorrectly" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.ProtocolSerializationTests.ClipboardSyncMessage_WithReplyTo_SerializesAndDeserializesCorrectly" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="471c3253-27cc-8849-1315-62b8e85224cb">
+      <Execution id="58408daf-8733-4134-a55f-bf4466c25053" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.ProtocolSerializationTests" name="ClipboardSyncMessage_WithReplyTo_SerializesAndDeserializesCorrectly" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.DiagnosticsAndRotationTests.RotationBridge_AppliesUserRotation_WhenPolicyIsPortraitPreferred" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="1c7a0fe0-7196-b625-5c55-2485e7f58662">
+      <Execution id="7b1b2eb8-941c-4528-aed2-cc536b10acdf" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.DiagnosticsAndRotationTests" name="RotationBridge_AppliesUserRotation_WhenPolicyIsPortraitPreferred" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.ClipboardBridgeTests.HandleWindowsClipboardChanged_SuppressesEcho_WhenHashMatchesLastSent" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="ecfc34f1-4362-5b41-42fd-030e54caaca5">
+      <Execution id="9dbd4b1f-b730-44a1-a102-c26fe4b8cc55" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.ClipboardBridgeTests" name="HandleWindowsClipboardChanged_SuppressesEcho_WhenHashMatchesLastSent" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.RuntimeStateMachineTests.InvalidTransition_Fails" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="c71e55b1-0754-230e-2be3-a25875937207">
+      <Execution id="edb90c3f-9764-4fb8-9d58-e0fef609570e" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.RuntimeStateMachineTests" name="InvalidTransition_Fails" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.DebouncedOrientationWatcherTests.OrientationWatcher_DebouncesRapidEvents" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="61d61233-e8a6-f81b-9296-c9eaba8c4822">
+      <Execution id="5994a068-1fa5-449a-95f9-4f91bcd8aaf5" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.DebouncedOrientationWatcherTests" name="OrientationWatcher_DebouncesRapidEvents" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.WindowEmbedderTests.ComputeEmbeddedStyle_StripsPopupAndCaption_AndAddsChildAndVisible" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="cbd4b062-062b-af62-1cfe-30864060d127">
+      <Execution id="041b67df-9d09-48b2-ad5f-db282498c551" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.WindowEmbedderTests" name="ComputeEmbeddedStyle_StripsPopupAndCaption_AndAddsChildAndVisible" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.BenchmarkMetricsTests.PercentileCalculation_IsExact" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="1ef10ed6-ef93-0ee6-06b5-3c197ddcbbce">
+      <Execution id="f1a397f4-ca63-47e1-9c2f-c6c52fc34ff2" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.BenchmarkMetricsTests" name="PercentileCalculation_IsExact" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.ClipboardBridgeTests.ComputeHash_ProducesConsistentSha256" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="361d1f8b-c4d7-73eb-a20d-45333f56a078">
+      <Execution id="f868cbf3-5219-48b6-8b66-138607bbd9b2" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.ClipboardBridgeTests" name="ComputeHash_ProducesConsistentSha256" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.DiagnosticsAndRotationTests.RotationBridge_AppliesUserRotation_WhenSynchronizingPhysicalOrientation" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="c56bcb60-d88e-4f07-ca5b-02d8cb9a4535">
+      <Execution id="731931a6-c2a3-4f48-9c76-25260c31a60b" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.DiagnosticsAndRotationTests" name="RotationBridge_AppliesUserRotation_WhenSynchronizingPhysicalOrientation" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.ClipboardBridgeTests.HandleWindowsClipboardChanged_SendsToGuest_WhenTextIsNew" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="24f5b550-fcea-9f41-4bc8-b060c6c23167">
+      <Execution id="0074bdbf-41aa-4838-b4d2-7a1f7b61d55a" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.ClipboardBridgeTests" name="HandleWindowsClipboardChanged_SendsToGuest_WhenTextIsNew" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.DiagnosticsAndRotationTests.DiagnosticLogService_WritesLogFilesSuccessfully" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="1b6000d9-1020-e866-2f10-a2afe8a0f7c2">
+      <Execution id="5e10b389-1250-4128-b663-09b1eb765a8b" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.DiagnosticsAndRotationTests" name="DiagnosticLogService_WritesLogFilesSuccessfully" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.WindowEmbedderTests.ComputeEmbeddedExStyle_StripsAppWindowAndBorders_AndAddsNoParentNotify" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="5034bb9b-697c-54ad-02ff-5b2f1974e873">
+      <Execution id="32df7495-53c3-4113-aa64-0872d277f778" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.WindowEmbedderTests" name="ComputeEmbeddedExStyle_StripsAppWindowAndBorders_AndAddsNoParentNotify" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.RuntimeStateMachineTests.ValidTransitions_Succeed" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="6b78e0f5-6115-a2ae-35a6-be0abd8a577e">
+      <Execution id="0cf36aa1-bdd7-4db5-a094-781db9b886cc" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.RuntimeStateMachineTests" name="ValidTransitions_Succeed" />
+    </UnitTest>
+    <UnitTest name="TabletDroid.Tests.ProtocolSerializationTests.LaunchAppResponse_Correlation_Matches" storage="c:\users\o1o6o\documents\dev\tabletdroid\host\tabletdroid.tests\bin\debug\net9.0\tabletdroid.tests.dll" id="9b7525b2-2534-576c-d8d9-8894193d9a51">
+      <Execution id="ac84b7b1-019e-4a3e-88ca-3e609a0e9341" />
+      <TestMethod codeBase="C:\Users\o1o6o\Documents\Dev\TabletDroid\host\TabletDroid.Tests\bin\Debug\net9.0\TabletDroid.Tests.dll" adapterTypeName="executor://xunit/VsTestRunner2/netcoreapp" className="TabletDroid.Tests.ProtocolSerializationTests" name="LaunchAppResponse_Correlation_Matches" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="1c7a0fe0-7196-b625-5c55-2485e7f58662" executionId="7b1b2eb8-941c-4528-aed2-cc536b10acdf" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="ecfc34f1-4362-5b41-42fd-030e54caaca5" executionId="9dbd4b1f-b730-44a1-a102-c26fe4b8cc55" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="d9a78669-7762-7e2c-22bf-10994ddde10d" executionId="ead3d8fd-499b-4a4b-9832-d5c2707f80d7" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1ef10ed6-ef93-0ee6-06b5-3c197ddcbbce" executionId="f1a397f4-ca63-47e1-9c2f-c6c52fc34ff2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="2767ffb1-8e03-755f-2a77-ef1c26f08056" executionId="a38f0f76-ab98-4cf9-91d1-47288b51064b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1b6000d9-1020-e866-2f10-a2afe8a0f7c2" executionId="5e10b389-1250-4128-b663-09b1eb765a8b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c71e55b1-0754-230e-2be3-a25875937207" executionId="edb90c3f-9764-4fb8-9d58-e0fef609570e" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="c56bcb60-d88e-4f07-ca5b-02d8cb9a4535" executionId="731931a6-c2a3-4f48-9c76-25260c31a60b" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="cbd4b062-062b-af62-1cfe-30864060d127" executionId="041b67df-9d09-48b2-ad5f-db282498c551" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="471c3253-27cc-8849-1315-62b8e85224cb" executionId="58408daf-8733-4134-a55f-bf4466c25053" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="29f29237-f60c-b3fa-eb3d-faf6a277223f" executionId="18fb394b-3669-425a-96ca-7d2eb2d6bad0" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="9b7525b2-2534-576c-d8d9-8894193d9a51" executionId="ac84b7b1-019e-4a3e-88ca-3e609a0e9341" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6b78e0f5-6115-a2ae-35a6-be0abd8a577e" executionId="0cf36aa1-bdd7-4db5-a094-781db9b886cc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="361d1f8b-c4d7-73eb-a20d-45333f56a078" executionId="f868cbf3-5219-48b6-8b66-138607bbd9b2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="5034bb9b-697c-54ad-02ff-5b2f1974e873" executionId="32df7495-53c3-4113-aa64-0872d277f778" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="24f5b550-fcea-9f41-4bc8-b060c6c23167" executionId="0074bdbf-41aa-4838-b4d2-7a1f7b61d55a" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="61d61233-e8a6-f81b-9296-c9eaba8c4822" executionId="5994a068-1fa5-449a-95f9-4f91bcd8aaf5" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="f00d7e1c-cda6-9768-a839-4fc62b89688c" executionId="83953482-5a8b-4590-abe2-dfd59e49c582" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="6cfcd7a0-961b-0024-e381-b60e823b2478" executionId="9502a4fc-e5d5-4c5d-a15a-7c4ea4c41697" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="목록에 없는 결과" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="로드된 모든 결과" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Completed">
+    <Counters total="19" executed="19" passed="19" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>[xUnit.net 00:00:00.00] xUnit.net VSTest Adapter v2.8.2+699d445a1a (64-bit .NET 9.0.19)&#xD;
+[xUnit.net 00:00:00.29]   Discovering: TabletDroid.Tests&#xD;
+[xUnit.net 00:00:00.32]   Discovered:  TabletDroid.Tests&#xD;
+[xUnit.net 00:00:00.32]   Starting:    TabletDroid.Tests&#xD;
+[xUnit.net 00:00:01.00]   Finished:    TabletDroid.Tests&#xD;
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

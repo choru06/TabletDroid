@@ -1,0 +1,120 @@
+﻿{
+    "Timestamp":  "20260823-232747",
+    "OrderEffect":  {
+                        "StandaloneSecondMeanP50":  6.814,
+                        "EmbeddedSecondMeanP50":  6.382,
+                        "StandaloneOrderDelta":  0.785,
+                        "EmbeddedOrderDelta":  0.094,
+                        "StandaloneFirstMeanP50":  6.029,
+                        "EmbeddedFirstMeanP50":  6.288
+                    },
+    "PooledEmbedded":  {
+                           "Move":  {
+                                        "Metric":  "Pooled_MOVE_EventToDrawStart",
+                                        "Count":  3976,
+                                        "Min":  5.038,
+                                        "Max":  14.179,
+                                        "Mean":  6.104,
+                                        "StdDev":  1.052,
+                                        "P50":  6.128,
+                                        "P90":  7.195,
+                                        "P95":  7.454,
+                                        "P99":  10.18
+                                    },
+                           "Down":  {
+                                        "Metric":  "Pooled_DOWN_EventToDrawStart",
+                                        "Count":  420,
+                                        "Min":  0.692,
+                                        "Max":  12.301,
+                                        "Mean":  6.229,
+                                        "StdDev":  2.567,
+                                        "P50":  6.336,
+                                        "P90":  9.699,
+                                        "P95":  10.245,
+                                        "P99":  11.347
+                                    }
+                       },
+    "StandaloneAcrossTrials":  {
+                                   "Condition":  "Standalone_Emulator",
+                                   "TrialCount":  6,
+                                   "Down_P50_Median":  6.356,
+                                   "Down_P50_Mean":  6.421,
+                                   "Down_P95_Median":  10.58,
+                                   "Down_P99_Median":  11.39,
+                                   "Move_P50_Median":  6.127,
+                                   "Move_P50_Mean":  6.128,
+                                   "Move_P95_Median":  7.465,
+                                   "Move_P99_Median":  11.095,
+                                   "Down_Dispatch_P50_Median":  1,
+                                   "Down_Dispatch_P95_Median":  1,
+                                   "Down_DispatchToCallback_P50_Median":  5.815,
+                                   "Down_DrawContentDuration_P50_Median":  0.001
+                               },
+    "PooledStandalone":  {
+                             "Move":  {
+                                          "Metric":  "Pooled_MOVE_EventToDrawStart",
+                                          "Count":  3966,
+                                          "Min":  5.047,
+                                          "Max":  14.236,
+                                          "Mean":  6.122,
+                                          "StdDev":  1.069,
+                                          "P50":  6.127,
+                                          "P90":  7.204,
+                                          "P95":  7.463,
+                                          "P99":  11.098
+                                      },
+                             "Down":  {
+                                          "Metric":  "Pooled_DOWN_EventToDrawStart",
+                                          "Count":  420,
+                                          "Min":  0.972,
+                                          "Max":  19.066,
+                                          "Mean":  6.402,
+                                          "StdDev":  2.804,
+                                          "P50":  6.517,
+                                          "P90":  10.006,
+                                          "P95":  10.641,
+                                          "P99":  11.818
+                                      }
+                         },
+    "EventIntegrity":  {
+                           "Embedded":  {
+                                            "ObservedDown":  420,
+                                            "ObservedUp":  420,
+                                            "Rejected":  0,
+                                            "ExpectedUp":  420,
+                                            "MissingUp":  0,
+                                            "ExpectedDown":  420,
+                                            "MissingDown":  0,
+                                            "InvalidTimestamp":  0,
+                                            "InvalidJson":  0
+                                        },
+                           "Standalone":  {
+                                              "ObservedDown":  420,
+                                              "ObservedUp":  420,
+                                              "Rejected":  0,
+                                              "ExpectedUp":  420,
+                                              "MissingUp":  0,
+                                              "ExpectedDown":  420,
+                                              "MissingDown":  0,
+                                              "InvalidTimestamp":  0,
+                                              "InvalidJson":  0
+                                          }
+                       },
+    "TrialCount":  6,
+    "EmbeddedAcrossTrials":  {
+                                 "Condition":  "Host_Embedded_SetParent",
+                                 "TrialCount":  6,
+                                 "Down_P50_Median":  6.408,
+                                 "Down_P50_Mean":  6.335,
+                                 "Down_P95_Median":  10.188,
+                                 "Down_P99_Median":  11.099,
+                                 "Move_P50_Median":  6.128,
+                                 "Move_P50_Mean":  6.044,
+                                 "Move_P95_Median":  7.493,
+                                 "Move_P99_Median":  10.134,
+                                 "Down_Dispatch_P50_Median":  1,
+                                 "Down_Dispatch_P95_Median":  1,
+                                 "Down_DispatchToCallback_P50_Median":  5.722,
+                                 "Down_DrawContentDuration_P50_Median":  0.001
+                             }
+}
