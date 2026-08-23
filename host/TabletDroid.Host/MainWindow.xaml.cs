@@ -122,7 +122,7 @@ public partial class MainWindow : Window
             int vh = (int)(EmulatorViewport.ActualHeight * dpiY);
 
             _logService.Log(LogCategory.Host, $"[HOST_EMBED_SUCCESS] IsEmbedded={_windowEmbedder.IsEmbedded}, EmbeddedHwnd=0x{_windowEmbedder.EmbeddedHwnd:X}, HostHwnd=0x{hostHwnd:X}, Viewport=[{vx},{vy},{vw},{vh}], DpiScale={dpiX:F2}");
-            LogText.Text = "Android Emulator embedded into TabletDroid Host (Zero-Copy).";
+            LogText.Text = "Android Emulator embedded into TabletDroid Host (Win32 SetParent child-window embedding).";
             return true;
         }
         else

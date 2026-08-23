@@ -105,13 +105,19 @@ if (Test-Path $avdConfigFile) {
                 $newLines += $line
             }
         }
-        if (-not $hasGpu) { $newLines += "hw.gpu.mode = host" }
-        if (-not $hasTrans) { $newLines += "hw.gltransport = pipe" }
         [System.IO.File]::WriteAllLines($avdConfigFile, $newLines)
         Write-Host "  [CONFIG_REMEDIATED] Normalized AVD config to hw.gpu.mode=host, hw.gltransport=pipe." -ForegroundColor Green
-    } else {
-        Write-Host "  [CONFIG_VERIFIED] AVD Hardware Profile: hw.gpu.mode='host', hw.gltransport='pipe'" -ForegroundColor Cyan
     }
+
+    # Post-remediation strict verification (Fail Fast)
+    $verifiedCfg = Get-Content $avdConfigFile
+    $vGpu = ($verifiedCfg | Select-String "^hw\.gpu\.mode\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+    $vTrans = ($verifiedCfg | Select-String "^hw\.gltransport\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+
+    if ($vGpu -ne "host" -or $vTrans -ne "pipe") {
+        throw "[FATAL] Post-remediation graphics config validation failed! hw.gpu.mode='$vGpu', hw.gltransport='$vTrans' (Expected: host, pipe)"
+    }
+    Write-Host "  [CONFIG_VERIFIED] AVD Hardware Profile: hw.gpu.mode='$vGpu', hw.gltransport='$vTrans'" -ForegroundColor Cyan
 } else {
     throw "[FATAL] AVD config file '$avdConfigFile' not found!"
 }
