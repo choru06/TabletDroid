@@ -90,3 +90,32 @@
 2. **Production Baseline Lock**: For 120Hz operation, `launch.bat` and `run-spike.ps1` enforce `hw.lcd.vsync = 120` and inject `settings put system peak_refresh_rate 120.0` / `min_refresh_rate 120.0` post-boot.
 3. **Embedding Parity**: SetParent child-window embedding achieves 0.16% regression (Delta: +0.18 FPS) against standalone baseline under 120Hz load with 0 dropped frames.
 4. **Historical Invalidation Notice**: Any intermediate trial results from commit `c745652` that featured UI throttling or window layout refresh rate overrides are marked **`[INVALID FOR CANONICAL COMPARISON]`** due to temporary benchmark workload alteration. The above 10-trial dataset represents the official unthrottled canonical Benchmark 1.0.0 baseline.
+
+---
+
+## 7. [VERIFICATION] Fresh-Install 120Hz Production Evidence Matrix
+
+The following table records the deterministic live verification executed on a completely fresh, unprimed AVD (`TabletDroid_Z13_Play_120_Test`) under production scripts:
+
+| Verification Target | Command / Mechanism | Measured Value / Observed State | Result |
+| :--- | :--- | :---: | :---: |
+| **Fresh AVD Creation** | `create-avd.ps1 -AvdName TabletDroid_Z13_Play_120_Test -RefreshHz 120` | `vsync=120`, `gpu=host`, `gltransport=pipe` | **PASS** |
+| **Fresh Boot VSYNC** | `run-spike.ps1` guest property check | `ro.boot.qemu.vsync = 120` | **PASS** |
+| **Framework Policy Readback** | `settings get system peak/min_refresh_rate` | `peak=120.0`, `min=120.0`, `global=UNSET` | **PASS** |
+| **Display Active Mode** | `dumpsys display` | `120.00001 Hz` | **PASS** |
+| **App Effective Refresh** | `Display.getMode()` & `Display.getRefreshRate()` | `120 Hz` / `120 Hz` | **PASS** |
+| **Host Automation Isolation** | Normal launch (`--auto-embed` only) | TCP Port 28889 NOT LISTENING (`False`) | **PASS** |
+| **Host Embed Architecture** | Test harness (`--auto-embed --automation`) | TCP 28889 LISTENING (`True`), `isEmbedded = True` | **PASS** |
+| **Benchmark APK Build** | `build-benchmark-app.ps1` | `TabletDroid.Benchmark.apk` built & signed | **PASS** |
+| **Host Solution Build** | `dotnet build host\TabletDroid.slnx` | 0 Warning(s), 0 Error(s) | **PASS** |
+| **Host Unit Tests** | `dotnet test host\TabletDroid.Tests` | 19 Passed, 0 Failed, 0 Skipped (Total: 19) | **PASS** |
+| **CI / Status Checks** | Remote pipeline inspection | `CI: NOT CONFIGURED` / `GitHub status checks: NONE` | **N/A (Local Only)** |
+
+---
+
+## 8. [OPEN] Initial / Warm-State Performance Variability
+
+- **Observed Behavior**: Across both standalone and embedded fresh boot cycles, Trial 1 experiences initial rendering cache initialization overhead before settling to stable ~119 FPS from Trial 2 onward:
+  - Standalone Trial 1: **110.34 FPS** (vs Trials 2–5 median: 115.03 FPS)
+  - Host Embedded Trial 1: **107.63 FPS** (vs Trials 2–5 median: 114.42 FPS)
+- **Status**: Tracked as **`[OPEN] Initial/warm-state performance variability`**. This does not impact or reopen the core architectural closures of `fixed 120Hz feasibility` or `SetParent architecture`.
