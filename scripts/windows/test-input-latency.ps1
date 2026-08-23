@@ -176,14 +176,14 @@ $testStderr = $testProc.StandardError.ReadToEnd()
 $testProc.WaitForExit()
 $unitTestsPassed = ($testProc.ExitCode -eq 0)
 
-$testTotal = 19
-$testPassedCount = 19
-$testFailedCount = 0
-
-if ($testStdout -match "통과:\s*(\d+),\s*실패:\s*(\d+),\s*전체:\s*(\d+)") {
-    $testPassedCount = [int]$Matches[1]
-    $testFailedCount = [int]$Matches[2]
-    $testTotal = [int]$Matches[3]
+if ($testStdout -match ":\s*(\d+)\s*,\s*[^:]+:\s*(\d+)\s*,\s*[^:]+:\s*(\d+)\s*,\s*[^:]+:\s*(\d+)") {
+    $testFailedCount = [int]$Matches[1]
+    $testPassedCount = [int]$Matches[2]
+    $testTotal = [int]$Matches[4]
+} elseif ($unitTestsPassed) {
+    $testPassedCount = 19
+    $testTotal = 19
+    $testFailedCount = 0
 }
 
 if (-not $unitTestsPassed -or $testFailedCount -gt 0) {
