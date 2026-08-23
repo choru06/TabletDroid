@@ -80,6 +80,15 @@ if ((Test-Path $emulator) -and (Test-Path $adb)) {
 
 # 4. Emulator 실행 및 부팅 대기
 Write-Host "`n[4/8] Checking Emulator process on $deviceSerial..." -ForegroundColor Yellow
+
+$avdConfigFile = "$env:USERPROFILE\.android\avd\$AvdName.avd\config.ini"
+if (Test-Path $avdConfigFile) {
+    $cfgContent = Get-Content $avdConfigFile
+    $gpuModeMatch = ($cfgContent | Select-String "^hw\.gpu\.mode\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+    $glTransMatch = ($cfgContent | Select-String "^hw\.gltransport\s*=\s*(.*)").Matches.Groups[1].Value.Trim()
+    Write-Host "  [CONFIG] AVD Hardware Profile: hw.gpu.mode='$gpuModeMatch', hw.gltransport='$glTransMatch'" -ForegroundColor Cyan
+}
+
 $devices = & $adb devices
 $isRunning = $devices -match $deviceSerial
 

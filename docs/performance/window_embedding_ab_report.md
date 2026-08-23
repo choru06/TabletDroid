@@ -1,4 +1,7 @@
-﻿# TabletDroid v0.1 Win32 Window Embedding A/B Benchmark Report
+# TabletDroid v0.1 Win32 Window Embedding A/B Benchmark Report
+
+> [!WARNING]
+> **HISTORICAL / SUPERSEDED**: This document contains early exploratory benchmark numbers performed on non-deterministic targets and dirty Quick Boot snapshot states. The definitive revalidation under the clean 60 FPS deterministic baseline is documented in [`docs/performance/window_embedding_ab.md`](window_embedding_ab.md), which shows **59.57 FPS** in embedded mode (only a **-0.67% delta** vs 59.97 FPS standalone).
 
 - **Timestamp**: 2026-08-20 00:34:44
 - **Host Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)

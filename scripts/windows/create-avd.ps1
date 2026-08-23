@@ -58,6 +58,7 @@ if (Test-Path $avdPath) {
     $config += "hw.ramSize = 6144"
     $config += "hw.gpu.enabled = yes"
     $config += "hw.gpu.mode = host"
+    $config += "hw.gltransport = pipe"
     $config += "hw.cpu.ncore = 8"
     $config += "vm.heapSize = 512M"
     $config += "hw.keyboard = yes"
