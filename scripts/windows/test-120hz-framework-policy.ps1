@@ -318,8 +318,10 @@ $md.Add('| **Layer B: Guest Boot Prop** | `ro.boot.qemu.vsync` | **120** | **120
 $md.Add('| **Layer C: DisplayManager** | `mCurrentDisplayMode` | ' + $controlA.DisplayManagerMode + ' | ' + $condB.DisplayManagerMode + ' | 120Hz Mode Active |')
 $md.Add('| **Layer D: Framework Policy** | `system.peak_refresh_rate` / `min_refresh_rate` | `' + $controlA.PeakSystem + '` | `' + $condB.PeakSystem + '` | Applied & Verified |')
 $md.Add('| **Layer E: App Display Mode** | `Display.getMode().getRefreshRate()` | ' + $controlA.AppModeFps + ' Hz | ' + $condB.AppModeFps + ' Hz | 120Hz Mode Active |')
-$md.Add('| **Layer F: App Refresh Rate** | `Display.getRefreshRate()` | ' + $controlA.AppRefreshRate + ' Hz | **' + $condB.AppRefreshRate + ' Hz** | ' + (if ($condB.AppRefreshRate -ge 114.0) { "**120 Hz Unlocked**" } else { "60 Hz Capped" }) + ' |')
-$md.Add('| **Layer G: Guest Choreographer** | Workload frame callback cadence | ' + $controlA.ChoreographerFps + ' FPS | **' + $condB.ChoreographerFps + ' FPS** | ' + (if ($condB.ChoreographerFps -ge 114.0) { "**120 FPS Render Cadence**" } else { "60 FPS Capped" }) + ' |')
+$evalRefresh = if ($condB.AppRefreshRate -ge 114.0) { "**120 Hz Unlocked**" } else { "60 Hz Capped" }
+$evalChoreo = if ($condB.ChoreographerFps -ge 114.0) { "**120 FPS Render Cadence**" } else { "60 FPS Capped" }
+$md.Add('| **Layer F: App Refresh Rate** | `Display.getRefreshRate()` | ' + $controlA.AppRefreshRate + ' Hz | **' + $condB.AppRefreshRate + ' Hz** | ' + $evalRefresh + ' |')
+$md.Add('| **Layer G: Guest Choreographer** | Workload frame callback cadence | ' + $controlA.ChoreographerFps + ' FPS | **' + $condB.ChoreographerFps + ' FPS** | ' + $evalChoreo + ' |')
 $md.Add('')
 $md.Add('### Architectural Decision: **' + $decision + '**')
 $md.Add('> **Finding**: ' + $decisionSummary)

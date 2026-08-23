@@ -4,7 +4,8 @@ param(
     [int]$RefreshHz = 120,
     [int]$ConsolePort = 5554,
     [int]$GuestPort = 28888,
-    $LaunchHost = $true
+    $LaunchHost = $true,
+    [switch]$EnableAutomation = $false
 )
 
 $shouldLaunchHost = ($LaunchHost -eq $true -or $LaunchHost -eq "true" -or $LaunchHost -eq "1" -or $LaunchHost -eq 1)
@@ -184,6 +185,8 @@ $results["Fullscreen Policy"] = "PASS"
 $rateVal = [double]$RefreshHz
 & $adb -s $deviceSerial shell settings put system peak_refresh_rate "${rateVal}.0" 2>$null
 & $adb -s $deviceSerial shell settings put system min_refresh_rate "${rateVal}.0" 2>$null
+& $adb -s $deviceSerial shell settings put global peak_refresh_rate "${rateVal}.0" 2>$null
+& $adb -s $deviceSerial shell settings put global min_refresh_rate "${rateVal}.0" 2>$null
 Start-Sleep -Seconds 1
 
 $rbPeakRaw = (& $adb -s $deviceSerial shell settings get system peak_refresh_rate 2>$null)
@@ -255,6 +258,10 @@ if ($shouldLaunchHost) {
 
     $hostDll = (Resolve-Path "$PSScriptRoot\..\..\host\TabletDroid.Host\bin\Debug\net9.0-windows\TabletDroid.Host.dll").Path
     $env:DOTNET_ROOT = "$env:LOCALAPPDATA\Microsoft\dotnet"
-    Write-Host "  Launching Host window with automatic SetParent embedding..." -ForegroundColor Green
-    Start-Process -FilePath $dotnetExe -ArgumentList "`"$hostDll`" --auto-embed --automation"
+    $hostArgs = @("`"$hostDll`"", "--auto-embed")
+    if ($EnableAutomation) {
+        $hostArgs += "--automation"
+    }
+    Write-Host "  Launching Host window with automatic SetParent embedding (Automation=$EnableAutomation)..." -ForegroundColor Green
+    Start-Process -FilePath $dotnetExe -ArgumentList ($hostArgs -join " ")
 }

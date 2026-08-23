@@ -329,8 +329,10 @@ Write-Host "  [OK] Standalone 120Hz: Median Choreo=${stdMedianChoreo} FPS, Media
 Write-Host "`n[3/6] Launching TabletDroid.Host & Executing Embedded 120Hz Benchmark (5 Trials)..." -ForegroundColor Yellow
 
 $hostCsproj = "$rootDir\host\TabletDroid.Host\TabletDroid.Host.csproj"
-$dotnetExe = "C:\Users\o1o6o\AppData\Local\Microsoft\dotnet\dotnet.exe"
-$env:DOTNET_ROOT = "C:\Users\o1o6o\AppData\Local\Microsoft\dotnet"
+$dotnetDir = "$env:LOCALAPPDATA\Microsoft\dotnet"
+$dotnetExe = if (Test-Path "$dotnetDir\dotnet.exe") { "$dotnetDir\dotnet.exe" } else { (Get-Command dotnet.exe -ErrorAction SilentlyContinue).Source }
+$env:DOTNET_ROOT = $dotnetDir
+$env:PATH = "$dotnetDir;$env:PATH"
 
 & $dotnetExe build $hostCsproj -c Debug > $null
 $hostDll = (Resolve-Path "$rootDir\host\TabletDroid.Host\bin\Debug\net9.0-windows\TabletDroid.Host.dll").Path
@@ -346,7 +348,8 @@ function Invoke-HostCmd {
         if ($iar.AsyncWaitHandle.WaitOne(3000)) {
             $c.EndConnect($iar)
             $s = $c.GetStream()
-            $w = New-Object System.IO.StreamWriter($s, [System.Text.Encoding]::UTF8) { AutoFlush = $true }
+            $w = New-Object System.IO.StreamWriter($s, [System.Text.Encoding]::UTF8)
+            $w.AutoFlush = $true
             $r = New-Object System.IO.StreamReader($s, [System.Text.Encoding]::UTF8)
             $w.WriteLine($Cmd)
             $resp = $r.ReadLine()
@@ -402,19 +405,34 @@ Write-Host "`n[4/6] Evaluating 120Hz Feasibility & Regression..." -ForegroundCol
 $fpsDelta = $embMedianPresented - $stdMedianPresented
 $regPct = if ($stdMedianPresented -gt 0) { [math]::Abs($fpsDelta) / $stdMedianPresented * 100.0 } else { 0.0 }
 
-$isPass120 = ($stdMedianChoreo -ge 114.0 -and $stdMedianPresented -ge 114.0 -and `
-              $embMedianChoreo -ge 114.0 -and $embMedianPresented -ge 114.0 -and `
-              $regPct -le 5.0 -and $stdValidCount -eq 5 -and $embValidCount -eq 5)
+$stdDroppedTotal = ($standaloneTrials | Measure-Object -Property DroppedFrames -Sum).Sum
+$embDroppedTotal = ($embeddedTrials | Measure-Object -Property DroppedFrames -Sum).Sum
+if ($null -eq $stdDroppedTotal) { $stdDroppedTotal = 0 }
+if ($null -eq $embDroppedTotal) { $embDroppedTotal = 0 }
 
-$finalDecision = if ($isPass120) { "FIXED 120HZ PRODUCTION PASS" } else { "FIXED 120HZ OPEN" }
+$stdAppRefreshList = $standaloneTrials | ForEach-Object { $_.AppDisplayRefreshRate } | Sort-Object
+$embAppRefreshList = $embeddedTrials | ForEach-Object { $_.AppDisplayRefreshRate } | Sort-Object
+$stdMedianAppRefresh = $stdAppRefreshList[[int]($stdAppRefreshList.Count / 2)]
+$embMedianAppRefresh = $embAppRefreshList[[int]($embAppRefreshList.Count / 2)]
 
 $strict114Count = ($standaloneTrials | Where-Object { $_.PresentedFps -ge 114.0 }).Count + ($embeddedTrials | Where-Object { $_.PresentedFps -ge 114.0 }).Count
+$strict114Pct = [math]::Round(($strict114Count / 10.0) * 100.0, 0)
+
+$isPass120 = ($stdMedianAppRefresh -ge 114.0 -and $embMedianAppRefresh -ge 114.0 -and `
+              $stdMedianChoreo -ge 114.0 -and $embMedianChoreo -ge 114.0 -and `
+              $stdMedianPresented -ge 114.0 -and $embMedianPresented -ge 114.0 -and `
+              $stdDroppedTotal -eq 0 -and $embDroppedTotal -eq 0 -and `
+              $stdValidCount -eq 5 -and $embValidCount -eq 5 -and `
+              $regPct -le 5.0)
+
+$finalDecision = if ($isPass120) { "FIXED 120HZ PRODUCTION PASS" } else { "FIXED 120HZ OPEN" }
 
 Write-Host "================================================================================" -ForegroundColor Cyan
 Write-Host " Standalone 120Hz Median Presented : $stdMedianPresented FPS (Choreo: $stdMedianChoreo FPS)" -ForegroundColor Yellow
 Write-Host " Embedded 120Hz Median Presented   : $embMedianPresented FPS (Choreo: $embMedianChoreo FPS)" -ForegroundColor Yellow
 Write-Host " Embedding Performance Regression  : $([math]::Round($regPct, 2))% (Delta: $([math]::Round($fpsDelta, 2)) FPS)" -ForegroundColor Yellow
-Write-Host " Strict Per-Trial >=114 FPS Count  : $strict114Count / 10 Trials" -ForegroundColor Yellow
+Write-Host " Strict Per-Trial >=114 FPS Count  : $strict114Count / 10 Trials ($strict114Pct%)" -ForegroundColor Yellow
+Write-Host " Dropped Frames Total              : Standalone=$stdDroppedTotal, Embedded=$embDroppedTotal" -ForegroundColor Yellow
 Write-Host " Final Decision                    : $finalDecision" -ForegroundColor Green
 Write-Host "================================================================================" -ForegroundColor Cyan
 
@@ -452,7 +470,7 @@ $evalPresented = if ($stdMedianPresented -ge 114.0) { "120 FPS PASS" } else { "6
 $md.Add('| **Layer G: Guest Choreographer** | Workload frame callback cadence | **' + $stdMedianChoreo + ' FPS** (Standalone) / **' + $embMedianChoreo + ' FPS** (Embedded) | **' + $evalChoreo + '** |')
 $md.Add('| **Layer H: SF Presented FPS** | Canonical Presented Throughput | **' + $stdMedianPresented + ' FPS** (Standalone) / **' + $embMedianPresented + ' FPS** (Embedded) | **' + $evalPresented + '** |')
 $md.Add('| **Canonical Validity Gate** | 5/5 Valid (Workload 1.0.0, Distance +- 10%, SF Layer Found) | **Standalone: ' + $stdValidCount + '/5, Embedded: ' + $embValidCount + '/5** | **10/10 VALID (100%)** |')
-$md.Add('| **Strict Per-Trial Gate** | Individual trials $\ge 114.0$ Presented FPS | **' + $strict114Count + ' / 10 Trials** (70%) | **7/10 PASS** (Median: 114.68 FPS) |')
+$md.Add('| **Strict Per-Trial Gate** | Individual trials $\ge 114.0$ Presented FPS | **' + $strict114Count + ' / 10 Trials (' + $strict114Pct + '%)** | **' + $strict114Count + '/10 PASS** (Median: ' + $embMedianPresented + ' FPS) |')
 $md.Add('')
 $md.Add('### Architectural Decision: **' + $finalDecision + '**')
 $md.Add('> **Root Cause Resolution**: Android 14 `DisplayModeDirector` default policy throttled application refresh rates to 60Hz. Applying `settings put system peak_refresh_rate 120.0` and `min_refresh_rate 120.0` successfully unlocked full 120Hz display refresh rate, driving `Choreographer` frame callbacks at **~119 FPS** and SurfaceFlinger presented throughput at **~114.5 FPS** with 0 dropped frames.')
@@ -472,7 +490,7 @@ foreach ($r in $standaloneTrials) {
 $md.Add('')
 $md.Add('- **Median Standalone Choreographer Rate**: **' + $stdMedianChoreo + ' FPS**')
 $md.Add('- **Median Standalone Presented FPS**: **' + $stdMedianPresented + ' FPS**')
-$md.Add('- **Total Dropped Presentation Frames**: **0 frames**')
+$md.Add('- **Total Dropped Presentation Frames**: **' + $stdDroppedTotal + ' frames**')
 $md.Add('- **Valid Trial Ratio**: **' + $stdValidCount + ' / 5 (100%)**')
 $md.Add('')
 $md.Add('---')
@@ -491,7 +509,7 @@ $md.Add('')
 $md.Add('- **Median Embedded Choreographer Rate**: **' + $embMedianChoreo + ' FPS**')
 $md.Add('- **Median Embedded Presented FPS**: **' + $embMedianPresented + ' FPS**')
 $md.Add('- **Embedding Performance Regression**: **' + [math]::Round($regPct, 2) + '%** (Delta: ' + [math]::Round($fpsDelta, 2) + ' FPS vs Standalone, well within $\le 5\%$ budget)')
-$md.Add('- **Total Dropped Presentation Frames**: **0 frames**')
+$md.Add('- **Total Dropped Presentation Frames**: **' + $embDroppedTotal + ' frames**')
 $md.Add('- **Valid Trial Ratio**: **' + $embValidCount + ' / 5 (100%)**')
 $md.Add('')
 $md.Add('---')
