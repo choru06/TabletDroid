@@ -1,30 +1,24 @@
-﻿# TabletDroid Fixed 120Hz Feasibility & VSYNC Break Characterization Report
+﻿# TabletDroid Fixed 120Hz Feasibility & VSYNC Property-Path Mismatch Analysis
 
-- **Date / Timestamp**: 2026-08-23 17:37:22
+- **Date / Timestamp**: 2026-08-23 18:00:28
 - **Target Hardware**: ASUS ROG Flow Z13 (Intel Core i9-12900H, NVIDIA GeForce RTX 3050 Ti Laptop GPU, 16GB RAM)
 - **Target OS**: Windows 11 Home 23H2 (Hypervisor: WHPX)
 - **Host Physical Panel**: 1920x1200 @ 120 Hz
 - **Target AVD Configuration**: `hw.lcd.vsync = 120`, `hw.gpu.mode = host`, `hw.gltransport = pipe`, `-no-snapshot`, `-no-snapshot-save`
-- **Emulator Session Lifecycle**: Cold Boot Clean PID: 17316,27528 (Terminated Old PID: NONE)
 
 ---
 
-## 1. Executive Summary & Multi-Layer Telemetry Matrix
+## 1. Executive Summary & Experimental Conditions Matrix
 
-| Pipeline Layer | Subsystem / Property | Measured Value | Evaluation |
-| :--- | :--- | :---: | :---: |
-| **Layer A: AVD Config** | `hw.lcd.vsync` in `config.ini` | **120** | **PASS (Configured 120)** |
-| **Layer B: Guest Boot Prop** | `ro.boot.qemu.vsync` | **120** (qemu.vsync: `N/A`) | **PASS (120)** |
-| **Layer C: DisplayManager** | `mCurrentDisplayMode` | **120 Hz** | **PASS (120Hz Exposed)** |
-| **Layer C: Supported Modes** | `dumpsys display` Modes | **N/A / PARSE_UNAVAILABLE** | **N/A** |
-| **Layer E/F: App Display** | `Display.getRefreshRate()` | **60 Hz** (Mode: 120 Hz) | **60Hz** |
-| **Layer G: Guest Choreographer** | Workload frame callback cadence | **P50: 60 FPS** (Standalone) / **60 FPS** (Embedded) | **~60 FPS CAPPED** |
-| **Layer H: SF Presented FPS** | Canonical Presented Throughput | **P50: 57.81 FPS** (Standalone) / **57.85 FPS** (Embedded) | **~60 FPS CAPPED** |
-| **Canonical Validity Gate** | 5/5 Valid (Workload 1.0.0, Distance +- 10%, SF Layer Found) | **Standalone: 5/5, Embedded: 5/5** | **5/5 VALID** |
+| Condition | `ro.boot.qemu.vsync` | `ro.kernel.qemu.vsync` | `qemu.vsync` | DisplayManager | App Refresh | App Mode | SF Refresh | Choreographer | Evaluation |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Control A: Standard Cold Boot** | `120` | `N/A` | `N/A` | 120 Hz | 60 Hz | 120 Hz | 60 Hz | **60.0 FPS** | **~60 FPS Capped** |
+| **Condition B1: `-prop` Injection** | `120` | `N/A` | `N/A` | 120 Hz | 60 Hz | 120 Hz | 60 Hz | **60.0 FPS** | **~60 FPS Capped** |
+| **Condition B2: Feature Override** | `N/A` | `N/A` | `N/A` | 60 Hz | 60 Hz | 60 Hz | 60 Hz | **60.0 FPS** | **60Hz Fallback** |
+| **Condition B3: `-qemu -append`** | `N/A` | `N/A` | `N/A` | BOOT_FAILED | 0 Hz | 0 Hz | N/A | **N/A** | **Boot Incompatible** |
 
-### Architectural Decision: **guest composer/display-config break**
-> **Break Location**: `Guest DisplayManager/HWC -> SurfaceFlinger (SF Active Refresh: 60 Hz, App Disp: 60 Hz)`
-> **Finding**: DisplayManager exposes 120Hz mode, but SurfaceFlinger / HWC active display configuration remains at 60Hz (~16.6ms VSYNC period).
+### Architectural Decision: **STOCK EMULATOR PROPERTY PATH IMMUTABLE [OPEN]**
+> **Finding**: Android 14 (API 34) enforces modern AndroidbootProps where kernel cmdline properties map exclusively to ro.boot.* (ro.boot.qemu.vsync=120). Disabling AndroidbootProps drops property propagation entirely (reverting DisplayManager to 60Hz fallback), and ro.kernel.* cannot be injected via stock emulator CLI flags. The 60Hz presentation cap is governed by the guest SurfaceFlinger HWC3 composer driver timing configuration.
 
 ---
 
@@ -32,47 +26,29 @@
 
 | Property | Key | Value |
 | :--- | :--- | :--- |
-| **Hardware Composer HAL** | `ro.hardware.hwcomposer` | **N/A** |
+| **Hardware Composer HAL** | `ro.hardware.hwcomposer` | **** |
 | **Android API Level** | `ro.build.version.sdk` | **34** |
 | **Build Fingerprint** | `ro.build.fingerprint` | `google/sdk_gphone64_x86_64/emu64xa:14/UE1A.230829.036.A4/12096271:user/release-keys` |
-| **Raw VSYNC Properties** | `getprop | grep vsync` | `[debug.sf.vsync_reactor_ignore_present_fences]: [true]
-[ro.boot.qemu.vsync]: [120]` |
+| **Active Composer Service** | `android.hardware.graphics.composer3-service.ranchu` (AIDL Composer 3) | **Running** |
 
 ---
 
-## 3. [MEASURED] Canonical 120Hz Standalone Benchmark Trials (5 Trials)
-
-| Trial | Condition | Guest Choreographer | SF Presented FPS | App Disp Refresh | Measure Frames | Actual Distance | Distance Error | Dropped | Duration | Status |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Trial 1 | Standalone_120Hz | **60 FPS** | **57.71 FPS** | 60 Hz | 1801 | 24013 px | 0.05% | 0 | 30.01s | **VALID** |
-| Trial 2 | Standalone_120Hz | **60 FPS** | **57.81 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
-| Trial 3 | Standalone_120Hz | **60 FPS** | **57.81 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
-| Trial 4 | Standalone_120Hz | **60 FPS** | **57.87 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
-| Trial 5 | Standalone_120Hz | **59.99 FPS** | **57.82 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
+## 3. [INFERENCE] AOSP Source Correlation & Property Propagation Architecture
+1. **Modern AndroidbootProps Path**: In Android 14 (`sdk_gphone64_x86_64`), QEMU boot parameters (`hw.lcd.vsync=120`) are transferred via device-tree / kernel boot arguments (`androidboot.qemu.vsync=120`) which Android `init` maps directly into read-only property `ro.boot.qemu.vsync=120`.
+2. **Legacy `ro.kernel.*` Property Deprecation**: Modern Android `init` ignores deprecated `ro.kernel.*` namespace translations. Consequently, `ro.kernel.qemu.vsync` remains `N/A` regardless of `-prop` or `-qemu -append` injection.
+3. **Display Subsystem Decoupling**: While Android `DisplayManager` parses `ro.boot.qemu.vsync=120` and registers a 120Hz display mode (`mCurrentDisplayMode` = 120 Hz, `Display.getMode()` = 120 Hz), the `SurfaceFlinger` hardware composer active display configuration and Choreographer VSYNC pulse generator remain locked to the primary 60Hz VSYNC clock (`vsyncPeriod = 16666666 ns`).
 
 ---
 
-## 4. [MEASURED] Canonical 120Hz Real Host Embedded Benchmark Trials (5 Trials)
-
-| Trial | Condition | Guest Choreographer | SF Presented FPS | App Disp Refresh | Measure Frames | Actual Distance | Distance Error | Dropped | Duration | Status |
-| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| Trial 1 | Host_Embedded_120Hz | **60 FPS** | **57.82 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30s | **VALID** |
-| Trial 2 | Host_Embedded_120Hz | **60 FPS** | **57.85 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
-| Trial 3 | Host_Embedded_120Hz | **60 FPS** | **57.89 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30s | **VALID** |
-| Trial 4 | Host_Embedded_120Hz | **60 FPS** | **57.88 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
-| Trial 5 | Host_Embedded_120Hz | **60 FPS** | **57.82 FPS** | 60 Hz | 1800 | 24000 px | 0% | 0 | 30.01s | **VALID** |
-
----
-
-## 5. [OPEN / FUTURE] Variable Refresh Rate (VRR / Adaptive-Sync) Characterization
+## 4. [OUT OF SCOPE] Scope Boundary Declaration
 
 > [!NOTE]
-> **Status: [OPEN / FUTURE]**
-> Dynamic Variable Refresh Rate (VRR / NVIDIA G-Sync / AMD FreeSync / VESA Adaptive-Sync) requires custom host presentation swapchain management (`DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING`), tearing presentation without DWM compositor throttling, and dynamic guest-to-host frame pacing alignment. This remains scheduled for post-v0.1 graphics architecture investigation.
+> **[OUT OF SCOPE]**
+> Variable Refresh Rate (VRR / NVIDIA G-Sync / AMD FreeSync / VESA Adaptive-Sync) is not a TabletDroid target. Only fixed 60Hz and fixed 120Hz modes are targeted.
 
 ---
 
-## 6. [DECISION] Conclusion & Summary
-1. **Production 60Hz Baseline**: Locked and verified at **5/5 VALID (59.27 FPS baseline)**. Throughput, graphics transport (`pipe`), and SetParent embedding architecture are **[CLOSED]**.
-2. **Fixed 120Hz VSYNC Break**: Directly identified and isolated as **guest composer/display-config break** at layer `Guest DisplayManager/HWC -> SurfaceFlinger (SF Active Refresh: 60 Hz, App Disp: 60 Hz)`.
-3. **Next Steps**: Retain stable 60Hz production configuration (`hw.gpu.mode=host`, `hw.gltransport=pipe`) for v0.1 release.
+## 5. [DECISION] Conclusion & Production Baseline Alignment
+1. **Production 60Hz Baseline**: Confirmed and locked at **5/5 VALID (59.27 FPS baseline)**. Throughput, graphics transport (`pipe`), and SetParent embedding architecture are **[CLOSED]**.
+2. **Fixed 120Hz Feasibility**: Stock Android emulator system image (`sdk_gphone64_x86_64` API 34) enforces 60Hz SurfaceFlinger hardware composer clocking despite 120Hz DisplayManager mode exposure. Status remains **[OPEN / UNSUPPORTED_IN_STOCK_EMULATOR]**.
+3. **Production Recommendation**: Maintain stable 60Hz configuration (`hw.gpu.mode=host`, `hw.gltransport=pipe`) for TabletDroid v0.1.

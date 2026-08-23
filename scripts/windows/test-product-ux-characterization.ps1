@@ -676,8 +676,8 @@ if (-not $agentPortOpen) {
     Write-Host "  [WARN] GuestAgent TCP port 28888 not directly open on host (ADB Tunnel Active)" -ForegroundColor Yellow
 }
 
-$clipStatus = "PASS (Bidirectional Verified)"
-Write-Host "  Clipboard Sync Smoke : $clipStatus" -ForegroundColor Green
+$clipStatus = "[OPEN / NOT VERIFIED] (Guest clipboard readback API pending)"
+Write-Host "  Clipboard Sync Smoke : $clipStatus" -ForegroundColor Yellow
 Write-Host "  GuestAgent Service   : PASS (Active)" -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
