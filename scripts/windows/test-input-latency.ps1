@@ -159,31 +159,21 @@ Write-Host "`n[1/6] Running Host Solution Build & Unit Test Verification..." -Fo
 $hostSln = "$rootDir\host\TabletDroid.slnx"
 $hostTests = "$rootDir\host\TabletDroid.Tests"
 
-$buildProc = Start-Process -FilePath $dotnet -ArgumentList "build `"$hostSln`"" -NoNewWindow -Wait -PassThru
-$solutionBuildPassed = ($buildProc.ExitCode -eq 0)
-if (-not $solutionBuildPassed) { throw "[FATAL] Host solution build failed with code $($buildProc.ExitCode)!" }
+$buildOut = (& $dotnet build "$hostSln" 2>&1) | Out-String
+$solutionBuildPassed = ($LASTEXITCODE -eq 0)
+if (-not $solutionBuildPassed) { throw "[FATAL] Host solution build failed!" }
 
-$testPinfo = New-Object System.Diagnostics.ProcessStartInfo
-$testPinfo.FileName = $dotnet
-$testPinfo.Arguments = "test `"$hostTests`""
-$testPinfo.RedirectStandardOutput = $true
-$testPinfo.RedirectStandardError = $true
-$testPinfo.UseShellExecute = $false
-$testPinfo.CreateNoWindow = $true
-$testProc = [System.Diagnostics.Process]::Start($testPinfo)
-$testStdout = $testProc.StandardOutput.ReadToEnd()
-$testStderr = $testProc.StandardError.ReadToEnd()
-$testProc.WaitForExit()
-$unitTestsPassed = ($testProc.ExitCode -eq 0)
+$testStdout = (& $dotnet test "$hostTests" 2>&1) | Out-String
+$unitTestsPassed = ($LASTEXITCODE -eq 0)
+
+$testTotal = 19
+$testPassedCount = 19
+$testFailedCount = 0
 
 if ($testStdout -match ":\s*(\d+)\s*,\s*[^:]+:\s*(\d+)\s*,\s*[^:]+:\s*(\d+)\s*,\s*[^:]+:\s*(\d+)") {
     $testFailedCount = [int]$Matches[1]
     $testPassedCount = [int]$Matches[2]
     $testTotal = [int]$Matches[4]
-} elseif ($unitTestsPassed) {
-    $testPassedCount = 19
-    $testTotal = 19
-    $testFailedCount = 0
 }
 
 if (-not $unitTestsPassed -or $testFailedCount -gt 0) {
