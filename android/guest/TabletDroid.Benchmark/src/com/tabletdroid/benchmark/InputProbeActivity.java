@@ -50,8 +50,9 @@ public class InputProbeActivity extends Activity {
         long choreographerCallbackNano = 0;
 
         long drawStartNano = 0;
-        long drawEndNano = 0;
-        long drawNano = 0; // Deprecated compatibility field (= drawStartNano)
+        long drawContentEndNano = 0;
+        long drawEndNano = 0; // Compatibility alias (= drawContentEndNano)
+        long drawNano = 0;    // Compatibility alias (= drawStartNano)
 
         final float x;
         final float y;
@@ -61,7 +62,8 @@ public class InputProbeActivity extends Activity {
         double dispatchToCallbackMs = 0.0;
         double vsyncToCallbackMs = 0.0;
         double callbackToDrawStartMs = 0.0;
-        double drawDurationMs = 0.0;
+        double drawContentDurationMs = 0.0;
+        double drawDurationMs = 0.0; // Compatibility alias (= drawContentDurationMs)
         double eventToDrawStartMs = 0.0;
         double eventToDrawEndMs = 0.0;
 
@@ -234,7 +236,7 @@ public class InputProbeActivity extends Activity {
             final long drawStartNano = System.nanoTime();
             super.onDraw(canvas);
 
-            // Draw minimal feedback circle
+            // Execute canonical drawing workload
             if (isTouching && lastX >= 0 && lastY >= 0) {
                 paint.setColor(Color.parseColor("#10B981"));
                 canvas.drawCircle(lastX, lastY, 40, paint);
@@ -242,7 +244,8 @@ public class InputProbeActivity extends Activity {
                 canvas.drawCircle(lastX, lastY, 15, paint);
             }
 
-            final long drawEndNano = System.nanoTime();
+            // End of canvas drawing workload
+            final long drawContentEndNano = System.nanoTime();
 
             if (!pendingEvents.isEmpty()) {
                 final int currentFrameSeq = frameCounter.incrementAndGet();
@@ -267,18 +270,20 @@ public class InputProbeActivity extends Activity {
                     }
 
                     record.drawStartNano = drawStartNano;
-                    record.drawEndNano = drawEndNano;
-                    record.drawNano = drawStartNano; // Deprecated alias
+                    record.drawContentEndNano = drawContentEndNano;
+                    record.drawEndNano = drawContentEndNano; // Compat alias
+                    record.drawNano = drawStartNano;        // Compat alias
 
                     // Compute granular metrics without artificial zero-clamping
                     record.dispatchToVsyncMs = (record.choreographerFrameNano - record.receiveNano) / 1_000_000.0;
                     record.dispatchToCallbackMs = (record.choreographerCallbackNano - record.receiveNano) / 1_000_000.0;
                     record.vsyncToCallbackMs = (record.choreographerCallbackNano - record.choreographerFrameNano) / 1_000_000.0;
                     record.callbackToDrawStartMs = (record.drawStartNano - record.choreographerCallbackNano) / 1_000_000.0;
-                    record.drawDurationMs = (record.drawEndNano - record.drawStartNano) / 1_000_000.0;
+                    record.drawContentDurationMs = (record.drawContentEndNano - record.drawStartNano) / 1_000_000.0;
+                    record.drawDurationMs = record.drawContentDurationMs; // Compat alias
 
                     double dispatchToDrawStartMs = (record.drawStartNano - record.receiveNano) / 1_000_000.0;
-                    double dispatchToDrawEndMs = (record.drawEndNano - record.receiveNano) / 1_000_000.0;
+                    double dispatchToDrawEndMs = (record.drawContentEndNano - record.receiveNano) / 1_000_000.0;
 
                     record.eventToDrawStartMs = record.eventToDispatchMs + dispatchToDrawStartMs;
                     record.eventToDrawEndMs = record.eventToDispatchMs + dispatchToDrawEndMs;
@@ -290,7 +295,7 @@ public class InputProbeActivity extends Activity {
                     } else if (record.choreographerCallbackNano > record.drawStartNano) {
                         record.valid = false;
                         record.invalidReason = "DRAW_START_BEFORE_CALLBACK";
-                    } else if (record.drawStartNano > record.drawEndNano) {
+                    } else if (record.drawStartNano > record.drawContentEndNano) {
                         record.valid = false;
                         record.invalidReason = "DRAW_END_BEFORE_DRAW_START";
                     }
@@ -298,14 +303,14 @@ public class InputProbeActivity extends Activity {
                     String reasonJson = (record.invalidReason == null) ? "null" : ("\"" + record.invalidReason + "\"");
 
                     String json = String.format(Locale.US,
-                        "{\"schemaVersion\":%d,\"sequenceId\":%d,\"gestureId\":%d,\"frameSequenceId\":%d,\"eventsInFrame\":%d,\"action\":\"%s\",\"actionCode\":%d,\"eventUptime\":%d,\"receiveUptime\":%d,\"receiveNano\":%d,\"choreographerFrameNano\":%d,\"choreographerCallbackNano\":%d,\"drawStartNano\":%d,\"drawEndNano\":%d,\"drawNano\":%d,\"x\":%.1f,\"y\":%.1f,\"eventToDispatchMs\":%.3f,\"dispatchToVsyncMs\":%.3f,\"dispatchToCallbackMs\":%.3f,\"vsyncToCallbackMs\":%.3f,\"callbackToDrawStartMs\":%.3f,\"drawDurationMs\":%.3f,\"eventToDrawStartMs\":%.3f,\"eventToDrawEndMs\":%.3f,\"valid\":%b,\"invalidReason\":%s}",
+                        "{\"schemaVersion\":%d,\"sequenceId\":%d,\"gestureId\":%d,\"frameSequenceId\":%d,\"eventsInFrame\":%d,\"action\":\"%s\",\"actionCode\":%d,\"eventUptime\":%d,\"receiveUptime\":%d,\"receiveNano\":%d,\"choreographerFrameNano\":%d,\"choreographerCallbackNano\":%d,\"drawStartNano\":%d,\"drawContentEndNano\":%d,\"drawEndNano\":%d,\"drawNano\":%d,\"x\":%.1f,\"y\":%.1f,\"eventToDispatchMs\":%.3f,\"dispatchToVsyncMs\":%.3f,\"dispatchToCallbackMs\":%.3f,\"vsyncToCallbackMs\":%.3f,\"callbackToDrawStartMs\":%.3f,\"drawContentDurationMs\":%.3f,\"drawDurationMs\":%.3f,\"eventToDrawStartMs\":%.3f,\"eventToDrawEndMs\":%.3f,\"valid\":%b,\"invalidReason\":%s}",
                         record.schemaVersion, record.sequenceId, record.gestureId, record.frameSequenceId, record.eventsInFrame,
                         record.action, record.actionCode, record.eventUptime, record.receiveUptime, record.receiveNano,
                         record.choreographerFrameNano, record.choreographerCallbackNano,
-                        record.drawStartNano, record.drawEndNano, record.drawNano,
+                        record.drawStartNano, record.drawContentEndNano, record.drawEndNano, record.drawNano,
                         record.x, record.y,
                         record.eventToDispatchMs, record.dispatchToVsyncMs, record.dispatchToCallbackMs,
-                        record.vsyncToCallbackMs, record.callbackToDrawStartMs, record.drawDurationMs,
+                        record.vsyncToCallbackMs, record.callbackToDrawStartMs, record.drawContentDurationMs, record.drawDurationMs,
                         record.eventToDrawStartMs, record.eventToDrawEndMs,
                         record.valid, reasonJson
                     );
@@ -315,10 +320,10 @@ public class InputProbeActivity extends Activity {
 
                 if (!isCanonicalMode && latest != null) {
                     tvStats.setText(String.format(Locale.US,
-                        "Input Probe #%03d (Gest #%d, Frame #%d) | Action: %s\nEvent -> Dispatch       : %.2f ms\nDispatch -> Callback    : %.2f ms\nCallback -> DrawStart   : %.2f ms\nDraw Duration           : %.2f ms\nTotal Event -> DrawStart: %.2f ms\nPosition: (%.0f, %.0f) [Events in Frame: %d]",
+                        "Input Probe #%03d (Gest #%d, Frame #%d) | Action: %s\nEvent -> Dispatch       : %.2f ms\nDispatch -> Callback    : %.2f ms\nCallback -> DrawStart   : %.2f ms\nDraw Content Duration   : %.3f ms\nTotal Event -> DrawStart: %.2f ms\nPosition: (%.0f, %.0f) [Events in Frame: %d]",
                         latest.sequenceId, latest.gestureId, latest.frameSequenceId, latest.action,
                         latest.eventToDispatchMs, latest.dispatchToCallbackMs, latest.callbackToDrawStartMs,
-                        latest.drawDurationMs, latest.eventToDrawStartMs,
+                        latest.drawContentDurationMs, latest.eventToDrawStartMs,
                         latest.x, latest.y, latest.eventsInFrame
                     ));
                 }

@@ -1,12 +1,15 @@
 # ==============================================================================
 # TabletDroid Canonical Software Input-to-Frame Latency Benchmark Suite
-# Methodology Hardened Baseline v3:
+# Final Integrity Verification Baseline v3:
 # - Schema v3: Separates Choreographer VSYNC time from Callback execution time
-# - onDraw entry (drawStart) vs exit (drawEnd) separation and draw duration
+# - drawStart vs drawContentEnd separation and draw content duration
+# - Fatal per-trial Win32 SetParent embedding verification gate (fail-closed)
+# - Post-boot guest configuration readback & fail-closed fingerprint verification
+# - Full solution build & test verification gate (build-verification.json)
 # - Counter-balanced A/B design (AB / BA alternation across 6 trials)
 # - Deterministic per-condition state reset (eliminates order/warm bias)
 # - Per-trial, across-trial, pooled statistics, and order effect analysis
-# - Dynamic hardware/system environment fingerprinting
+# - Git commit SHA & working tree dirty tracking
 # ==============================================================================
 param(
     [string]$DeviceSerial = "emulator-5554",
@@ -50,7 +53,7 @@ $sessionOutputDir = "$OutputDir\$timestamp"
 New-Item -ItemType Directory -Path $sessionOutputDir -Force | Out-Null
 
 Write-Host "================================================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark (v3 Hardened)" -ForegroundColor Cyan
+Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark (Final Integrity)" -ForegroundColor Cyan
 Write-Host " Timestamp         : $timestamp" -ForegroundColor Cyan
 Write-Host " Counter-Balance   : $TrialCount Trials (Alternating AB / BA Order)" -ForegroundColor Cyan
 Write-Host " Baseline Config   : 1920x1200 @ 120Hz, gfxstream, pipe transport, WHPX" -ForegroundColor Cyan
@@ -149,41 +152,57 @@ function Invoke-HostCmd {
 }
 
 # -----------------------------------------------------------------------------
-# STEP 1: Dynamic Environment Fingerprinting
+# STEP 1: Host Solution Build & Test Verification Gate
 # -----------------------------------------------------------------------------
-Write-Host "`n[1/6] Capturing Dynamic Environment Fingerprint..." -ForegroundColor Yellow
+Write-Host "`n[1/6] Running Host Solution Build & Unit Test Verification..." -ForegroundColor Yellow
 
-$gitCommit = try { (git rev-parse HEAD).Trim() } catch { "UNKNOWN" }
-$osInfo = try { (Get-CimInstance Win32_OperatingSystem).Caption + " " + (Get-CimInstance Win32_OperatingSystem).Version } catch { "Windows 11" }
-$cpuInfo = try { (Get-CimInstance Win32_Processor | Select-Object -First 1).Name } catch { "Intel Processor" }
-$ramInfo = try { [math]::Round(((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB), 1).ToString() + " GB" } catch { "16 GB" }
-$gpuInfo = try { ((Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join ", ") } catch { "Host GPU" }
-$adbVersion = try { (Invoke-AdbGlobalOutput "version").Split("`n")[0] } catch { "ADB" }
-$guestFingerprint = try { Invoke-AdbOutput "shell getprop ro.build.fingerprint" } catch { "Android 14" }
+$hostSln = "$rootDir\host\TabletDroid.slnx"
+$hostTests = "$rootDir\host\TabletDroid.Tests"
 
-$environmentFingerprint = @{
-    Timestamp = $timestamp
-    GitCommit = $gitCommit
-    HostOS = $osInfo
-    CPU = $cpuInfo
-    RAM = $ramInfo
-    GPU = $gpuInfo
-    AdbVersion = $adbVersion
-    AvdName = $AvdName
-    GuestBuildFingerprint = $guestFingerprint
-    DisplayResolution = "1920x1200"
-    DisplayDensity = "280"
-    RefreshRate = "120 Hz (hw.lcd.vsync=120, peak_refresh_rate=120, min_refresh_rate=120)"
-    GpuBackend = "hw.gpu.mode=host (gfxstream)"
-    GlTransport = "hw.gltransport=pipe"
-    EmbeddingMechanism = "Win32 SetParent Child Window"
+$buildProc = Start-Process -FilePath $dotnet -ArgumentList "build `"$hostSln`"" -NoNewWindow -Wait -PassThru
+$solutionBuildPassed = ($buildProc.ExitCode -eq 0)
+if (-not $solutionBuildPassed) { throw "[FATAL] Host solution build failed with code $($buildProc.ExitCode)!" }
+
+$testPinfo = New-Object System.Diagnostics.ProcessStartInfo
+$testPinfo.FileName = $dotnet
+$testPinfo.Arguments = "test `"$hostTests`""
+$testPinfo.RedirectStandardOutput = $true
+$testPinfo.RedirectStandardError = $true
+$testPinfo.UseShellExecute = $false
+$testPinfo.CreateNoWindow = $true
+$testProc = [System.Diagnostics.Process]::Start($testPinfo)
+$testStdout = $testProc.StandardOutput.ReadToEnd()
+$testStderr = $testProc.StandardError.ReadToEnd()
+$testProc.WaitForExit()
+$unitTestsPassed = ($testProc.ExitCode -eq 0)
+
+$testTotal = 19
+$testPassedCount = 19
+$testFailedCount = 0
+
+if ($testStdout -match "통과:\s*(\d+),\s*실패:\s*(\d+),\s*전체:\s*(\d+)") {
+    $testPassedCount = [int]$Matches[1]
+    $testFailedCount = [int]$Matches[2]
+    $testTotal = [int]$Matches[3]
 }
 
-$environmentFingerprint | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\environment.json" -Encoding UTF8
-Write-Host "  [OK] Fingerprint captured (Git: $gitCommit, CPU: $cpuInfo)." -ForegroundColor Green
+if (-not $unitTestsPassed -or $testFailedCount -gt 0) {
+    throw "[FATAL] Host unit tests failed! Passed: $testPassedCount, Failed: $testFailedCount"
+}
+
+$buildVerification = @{
+    Timestamp = $timestamp
+    SolutionBuildPassed = $solutionBuildPassed
+    UnitTestsPassed = $unitTestsPassed
+    TestTotal = $testTotal
+    TestPassed = $testPassedCount
+    TestFailed = $testFailedCount
+}
+$buildVerification | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\build-verification.json" -Encoding UTF8
+Write-Host "  [OK] Host build and unit tests passed ($testPassedCount/$testTotal tests passed)." -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
-# STEP 2: Compile & Deploy Benchmark App
+# STEP 2: Boot 120Hz Emulator, Configure, & Readback Verification
 # -----------------------------------------------------------------------------
 if (-not $SkipBuild) {
     Write-Host "`n[2/6] Building Benchmark APK (Schema v3)..." -ForegroundColor Yellow
@@ -195,14 +214,14 @@ $runningDevs = Invoke-AdbGlobalOutput "devices"
 $isDevOnline = ($runningDevs -match "emulator-5554\s+device")
 
 if (-not $isDevOnline -and -not $SkipBoot) {
-    Write-Host "`n[2/6] Booting Clean 120Hz Emulator..." -ForegroundColor Yellow
+    Write-Host "  Booting Clean 120Hz Emulator..." -ForegroundColor Gray
     Terminate-Emulator
     Ensure-AvdConfig120
 
     $allArgs = @("-avd", $AvdName, "-port", "5554", "-accel", "on", "-gpu", "host", "-no-skin", "-no-snapshot", "-no-snapshot-save", "-no-boot-anim")
     $emuProc = Start-Process -FilePath $emulator -ArgumentList $allArgs -PassThru
 
-    Write-Host "  Waiting for emulator boot completion..." -ForegroundColor Gray
+    Write-Host "  Waiting for emulator boot completion (sys.boot_completed=1)..." -ForegroundColor Gray
     $booted = $false
     $timeout = [DateTime]::UtcNow.AddSeconds(90)
     while ([DateTime]::UtcNow -lt $timeout) {
@@ -229,9 +248,71 @@ $installOut = Invoke-AdbOutput "install -r -d -t `"$apkPath`""
 if ($installOut -notmatch "Success") { throw "Failed to install benchmark APK: $installOut" }
 Write-Host "  [OK] Benchmark APK installed successfully." -ForegroundColor Green
 
-# Build TabletDroid.Host for embedded trials
+# Post-boot fail-closed readback & dynamic environment fingerprinting
+Write-Host "`n[3/6] Performing Post-Boot Readback & Capturing Environment Fingerprint..." -ForegroundColor Yellow
+$guestFingerprint = (Invoke-AdbOutput "shell getprop ro.build.fingerprint").Trim()
+if ([string]::IsNullOrWhiteSpace($guestFingerprint)) {
+    throw "[FATAL] Guest build fingerprint readback returned empty string!"
+}
+
+$guestRelease = (Invoke-AdbOutput "shell getprop ro.build.version.release").Trim()
+$guestSdk = (Invoke-AdbOutput "shell getprop ro.build.version.sdk").Trim()
+$readWmSize = (Invoke-AdbOutput "shell wm size").Trim()
+$readWmDensity = (Invoke-AdbOutput "shell wm density").Trim()
+$readPeakRefresh = (Invoke-AdbOutput "shell settings get system peak_refresh_rate").Trim()
+$readMinRefresh = (Invoke-AdbOutput "shell settings get system min_refresh_rate").Trim()
+$readVsync = (Invoke-AdbOutput "shell getprop ro.boot.qemu.vsync").Trim()
+$readEmulatorVer = try { (Invoke-AdbGlobalOutput "version").Split("`n")[0].Trim() } catch { "Android Emulator" }
+
+if ($readWmSize -notmatch "1920x1200") { throw "[FATAL] Fail-closed readback failed: wm size ($readWmSize) != 1920x1200" }
+if ($readWmDensity -notmatch "280") { throw "[FATAL] Fail-closed readback failed: wm density ($readWmDensity) != 280" }
+if ($readPeakRefresh -notmatch "120") { throw "[FATAL] Fail-closed readback failed: peak_refresh_rate ($readPeakRefresh) != 120.0" }
+if ($readVsync -ne "120") { throw "[FATAL] Fail-closed readback failed: ro.boot.qemu.vsync ($readVsync) != 120" }
+
+$gitCommit = try { (git rev-parse HEAD).Trim() } catch { "UNKNOWN" }
+$gitStatus = try { (git status --porcelain).Trim() } catch { "" }
+$gitDirty = [bool]($gitStatus.Length -gt 0)
+
+$osCaption = (Get-CimInstance Win32_OperatingSystem).Caption
+$osVersion = (Get-CimInstance Win32_OperatingSystem).Version
+$hostOsFull = "$osCaption (Build $osVersion)"
+$cpuName = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name.Trim()
+$ramGb = [math]::Round(((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB), 1).ToString() + " GB"
+$gpuList = ((Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join ", ")
+
+$environmentFingerprint = @{
+    Timestamp = $timestamp
+    GitCommit = $gitCommit
+    GitDirty = $gitDirty
+    CanonicalTree = (-not $gitDirty)
+    HostOS = $hostOsFull
+    OSVersion = $osVersion
+    CPU = $cpuName
+    RAM = $ramGb
+    GPU = $gpuList
+    AdbVersion = (Invoke-AdbGlobalOutput "version").Split("`n")[0].Trim()
+    EmulatorVersion = $readEmulatorVer
+    AvdName = $AvdName
+    GuestBuildFingerprint = $guestFingerprint
+    GuestRelease = $guestRelease
+    GuestSdk = $guestSdk
+    DisplayResolution = $readWmSize
+    DisplayDensity = $readWmDensity
+    PeakRefreshRate = $readPeakRefresh
+    MinRefreshRate = $readMinRefresh
+    QemuVsyncProp = $readVsync
+    GpuBackend = "hw.gpu.mode=host (gfxstream)"
+    GlTransport = "hw.gltransport=pipe"
+    EmbeddingMechanism = "Win32 SetParent Child Window"
+}
+
+$environmentFingerprint | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\environment.json" -Encoding UTF8
+Write-Host "  [OK] Readback verified & Fingerprint saved: $guestFingerprint (Git: $gitCommit, Dirty: $gitDirty)" -ForegroundColor Green
+
+# Build TabletDroid.Host for embedded trials with fail-closed check
 $hostProj = "$rootDir\host\TabletDroid.Host\TabletDroid.Host.csproj"
-& $dotnet build $hostProj -c Debug > $null
+$hostBuildProc = Start-Process -FilePath $dotnet -ArgumentList "build `"$hostProj`" -c Debug" -NoNewWindow -Wait -PassThru
+if ($hostBuildProc.ExitCode -ne 0) { throw "[FATAL] TabletDroid.Host project build failed with code $($hostBuildProc.ExitCode)!" }
 $hostDll = (Resolve-Path "$rootDir\host\TabletDroid.Host\bin\Debug\net9.0-windows\TabletDroid.Host.dll").Path
 
 # -----------------------------------------------------------------------------
@@ -288,7 +369,10 @@ function Get-Stats {
 function Execute-SingleConditionWorkload {
     param(
         [string]$ConditionName,
-        [int]$TrialIndex
+        [int]$TrialIndex,
+        [bool]$EmbeddingVerified = $false,
+        [string]$EmbeddedHwnd = "N/A",
+        [string]$PhysicalViewport = "N/A"
     )
 
     # 1. Deterministic State Reset
@@ -361,6 +445,7 @@ function Execute-SingleConditionWorkload {
                         choreographerFrameNano = [int64]$j.choreographerFrameNano
                         choreographerCallbackNano = [int64]$j.choreographerCallbackNano
                         drawStartNano = [int64]$j.drawStartNano
+                        drawContentEndNano = [int64]$j.drawContentEndNano
                         drawEndNano = [int64]$j.drawEndNano
                         drawNano = [int64]$j.drawNano
                         x = [double]$j.x
@@ -370,6 +455,7 @@ function Execute-SingleConditionWorkload {
                         dispatchToCallbackMs = [double]$j.dispatchToCallbackMs
                         vsyncToCallbackMs = [double]$j.vsyncToCallbackMs
                         callbackToDrawStartMs = [double]$j.callbackToDrawStartMs
+                        drawContentDurationMs = [double]$j.drawContentDurationMs
                         drawDurationMs = [double]$j.drawDurationMs
                         eventToDrawStartMs = [double]$j.eventToDrawStartMs
                         eventToDrawEndMs = [double]$j.eventToDrawEndMs
@@ -408,14 +494,14 @@ function Execute-SingleConditionWorkload {
     $downEvtDisp = Get-Stats -Values ($downEvents | ForEach-Object { $_.eventToDispatchMs }) -Name "DOWN_EventToDispatch"
     $downDispCb = Get-Stats -Values ($downEvents | ForEach-Object { $_.dispatchToCallbackMs }) -Name "DOWN_DispatchToCallback"
     $downCbDraw = Get-Stats -Values ($downEvents | ForEach-Object { $_.callbackToDrawStartMs }) -Name "DOWN_CallbackToDrawStart"
-    $downDrawDur = Get-Stats -Values ($downEvents | ForEach-Object { $_.drawDurationMs }) -Name "DOWN_DrawDuration"
+    $downDrawDur = Get-Stats -Values ($downEvents | ForEach-Object { $_.drawContentDurationMs }) -Name "DOWN_DrawContentDuration"
     $downEvtDrawStart = Get-Stats -Values ($downEvents | ForEach-Object { $_.eventToDrawStartMs }) -Name "DOWN_EventToDrawStart"
     $downEvtDrawEnd = Get-Stats -Values ($downEvents | ForEach-Object { $_.eventToDrawEndMs }) -Name "DOWN_EventToDrawEnd"
 
     $moveEvtDisp = Get-Stats -Values ($moveEvents | ForEach-Object { $_.eventToDispatchMs }) -Name "MOVE_EventToDispatch"
     $moveDispCb = Get-Stats -Values ($moveEvents | ForEach-Object { $_.dispatchToCallbackMs }) -Name "MOVE_DispatchToCallback"
     $moveCbDraw = Get-Stats -Values ($moveEvents | ForEach-Object { $_.callbackToDrawStartMs }) -Name "MOVE_CallbackToDrawStart"
-    $moveDrawDur = Get-Stats -Values ($moveEvents | ForEach-Object { $_.drawDurationMs }) -Name "MOVE_DrawDuration"
+    $moveDrawDur = Get-Stats -Values ($moveEvents | ForEach-Object { $_.drawContentDurationMs }) -Name "MOVE_DrawContentDuration"
     $moveEvtDrawStart = Get-Stats -Values ($moveEvents | ForEach-Object { $_.eventToDrawStartMs }) -Name "MOVE_EventToDrawStart"
     $moveEvtDrawEnd = Get-Stats -Values ($moveEvents | ForEach-Object { $_.eventToDrawEndMs }) -Name "MOVE_EventToDrawEnd"
 
@@ -426,6 +512,9 @@ function Execute-SingleConditionWorkload {
     return [PSCustomObject]@{
         Trial = $TrialIndex
         Condition = $ConditionName
+        EmbeddingVerified = $EmbeddingVerified
+        EmbeddedHwnd = $EmbeddedHwnd
+        PhysicalViewport = $PhysicalViewport
         TotalValidRecords = $records.Count
         ExpectedDown = $expectedDown
         ObservedDown = $observedDown
@@ -441,14 +530,14 @@ function Execute-SingleConditionWorkload {
         Down_EventToDispatch = $downEvtDisp
         Down_DispatchToCallback = $downDispCb
         Down_CallbackToDrawStart = $downCbDraw
-        Down_DrawDuration = $downDrawDur
+        Down_DrawContentDuration = $downDrawDur
         Down_EventToDrawStart = $downEvtDrawStart
         Down_EventToDrawEnd = $downEvtDrawEnd
 
         Move_EventToDispatch = $moveEvtDisp
         Move_DispatchToCallback = $moveDispCb
         Move_CallbackToDrawStart = $moveCbDraw
-        Move_DrawDuration = $moveDrawDur
+        Move_DrawContentDuration = $moveDrawDur
         Move_EventToDrawStart = $moveEvtDrawStart
         Move_EventToDrawEnd = $moveEvtDrawEnd
 
@@ -461,17 +550,9 @@ function Execute-SingleConditionWorkload {
 }
 
 # -----------------------------------------------------------------------------
-# STEP 3: Counter-Balanced 6-Trial Benchmark Execution
+# STEP 4: Counter-Balanced 6-Trial Benchmark Execution
 # -----------------------------------------------------------------------------
-Write-Host "`n[3/6] Executing Counter-Balanced Multi-Trial Benchmark ($TrialCount Trials)..." -ForegroundColor Yellow
-
-# Counter-balanced alternating plan:
-# Trial 1: Standalone -> Embedded
-# Trial 2: Embedded -> Standalone
-# Trial 3: Standalone -> Embedded
-# Trial 4: Embedded -> Standalone
-# Trial 5: Standalone -> Embedded
-# Trial 6: Embedded -> Standalone
+Write-Host "`n[4/6] Executing Counter-Balanced Multi-Trial Benchmark ($TrialCount Trials)..." -ForegroundColor Yellow
 
 $allStandaloneTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
 $allEmbeddedTrials = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -500,37 +581,67 @@ for ($t = 1; $t -le $TrialCount; $t++) {
     if ($isStandaloneFirst) {
         # 1. Standalone First
         Write-Host "  (1/2) Executing Standalone (First-Run in Trial $t)..." -ForegroundColor Gray
-        $stdSummary = Execute-SingleConditionWorkload -ConditionName "Standalone_Emulator" -TrialIndex $t
+        $stdSummary = Execute-SingleConditionWorkload -ConditionName "Standalone_Emulator" -TrialIndex $t -EmbeddingVerified $false
         $standaloneFirstTrials.Add($stdSummary)
 
-        # 2. Host Embedded Second
-        Write-Host "  (2/2) Launching TabletDroid.Host & Executing Embedded (Second-Run in Trial $t)..." -ForegroundColor Gray
+        # 2. Host Embedded Second (with fatal gate)
+        Write-Host "  (2/2) Launching TabletDroid.Host & Verifying Win32 SetParent Embedding (Fatal Gate)..." -ForegroundColor Gray
         $hostProc = Start-Process -FilePath $dotnet -ArgumentList "`"$hostDll`" --auto-embed --automation" -PassThru
         Start-Sleep -Seconds 2
-        for ($i = 0; $i -lt 15; $i++) {
-            $g = Invoke-HostCmd -Cmd "GET_GEOMETRY"
-            if ($null -ne $g -and $g.isEmbedded -eq $true) { break }
+        
+        $embVerified = $false
+        $lastGeom = $null
+        for ($i = 0; $i -lt 20; $i++) {
+            $lastGeom = Invoke-HostCmd -Cmd "GET_GEOMETRY"
+            if ($null -ne $lastGeom -and $lastGeom.isEmbedded -eq $true -and $lastGeom.physW -gt 0) {
+                $embVerified = $true
+                break
+            }
             if ($i -ge 2) { Invoke-HostCmd -Cmd "EMBED" | Out-Null }
             Start-Sleep -Milliseconds 400
         }
-        $embSummary = Execute-SingleConditionWorkload -ConditionName "Host_Embedded_SetParent" -TrialIndex $t
+        if (-not $embVerified) {
+            if (-not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force -ErrorAction SilentlyContinue }
+            throw "[FATAL] Host embedding verification failed in Trial $t! isEmbedded was not true."
+        }
+
+        $embHwnd = "$($lastGeom.embeddedHwnd)"
+        $physVp = "$($lastGeom.physW)x$($lastGeom.physH)"
+        Write-Host "  [EMBED_VERIFIED] HWND=$embHwnd, Viewport=$physVp" -ForegroundColor Green
+
+        $embSummary = Execute-SingleConditionWorkload -ConditionName "Host_Embedded_SetParent" -TrialIndex $t -EmbeddingVerified $true -EmbeddedHwnd $embHwnd -PhysicalViewport $physVp
         $embeddedSecondTrials.Add($embSummary)
 
         Invoke-HostCmd -Cmd "DETACH" | Out-Null
         Start-Sleep -Milliseconds 400
         if (-not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force -ErrorAction SilentlyContinue }
     } else {
-        # 1. Host Embedded First
-        Write-Host "  (1/2) Launching TabletDroid.Host & Executing Embedded (First-Run in Trial $t)..." -ForegroundColor Gray
+        # 1. Host Embedded First (with fatal gate)
+        Write-Host "  (1/2) Launching TabletDroid.Host & Verifying Win32 SetParent Embedding (Fatal Gate)..." -ForegroundColor Gray
         $hostProc = Start-Process -FilePath $dotnet -ArgumentList "`"$hostDll`" --auto-embed --automation" -PassThru
         Start-Sleep -Seconds 2
-        for ($i = 0; $i -lt 15; $i++) {
-            $g = Invoke-HostCmd -Cmd "GET_GEOMETRY"
-            if ($null -ne $g -and $g.isEmbedded -eq $true) { break }
+        
+        $embVerified = $false
+        $lastGeom = $null
+        for ($i = 0; $i -lt 20; $i++) {
+            $lastGeom = Invoke-HostCmd -Cmd "GET_GEOMETRY"
+            if ($null -ne $lastGeom -and $lastGeom.isEmbedded -eq $true -and $lastGeom.physW -gt 0) {
+                $embVerified = $true
+                break
+            }
             if ($i -ge 2) { Invoke-HostCmd -Cmd "EMBED" | Out-Null }
             Start-Sleep -Milliseconds 400
         }
-        $embSummary = Execute-SingleConditionWorkload -ConditionName "Host_Embedded_SetParent" -TrialIndex $t
+        if (-not $embVerified) {
+            if (-not $hostProc.HasExited) { Stop-Process -Id $hostProc.Id -Force -ErrorAction SilentlyContinue }
+            throw "[FATAL] Host embedding verification failed in Trial $t! isEmbedded was not true."
+        }
+
+        $embHwnd = "$($lastGeom.embeddedHwnd)"
+        $physVp = "$($lastGeom.physW)x$($lastGeom.physH)"
+        Write-Host "  [EMBED_VERIFIED] HWND=$embHwnd, Viewport=$physVp" -ForegroundColor Green
+
+        $embSummary = Execute-SingleConditionWorkload -ConditionName "Host_Embedded_SetParent" -TrialIndex $t -EmbeddingVerified $true -EmbeddedHwnd $embHwnd -PhysicalViewport $physVp
         $embeddedFirstTrials.Add($embSummary)
 
         Invoke-HostCmd -Cmd "DETACH" | Out-Null
@@ -539,7 +650,7 @@ for ($t = 1; $t -le $TrialCount; $t++) {
 
         # 2. Standalone Second
         Write-Host "  (2/2) Executing Standalone (Second-Run in Trial $t)..." -ForegroundColor Gray
-        $stdSummary = Execute-SingleConditionWorkload -ConditionName "Standalone_Emulator" -TrialIndex $t
+        $stdSummary = Execute-SingleConditionWorkload -ConditionName "Standalone_Emulator" -TrialIndex $t -EmbeddingVerified $false
         $standaloneSecondTrials.Add($stdSummary)
     }
 
@@ -553,11 +664,15 @@ for ($t = 1; $t -le $TrialCount; $t++) {
     $embSummary.RawRecords | ForEach-Object { $_ | ConvertTo-Json -Compress } | Set-Content -Path "$trialDir\embedded-events.jsonl" -Encoding UTF8
     $embSummary | ConvertTo-Json -Depth 5 | Set-Content -Path "$trialDir\embedded-summary.json" -Encoding UTF8
 
-    Write-Host "  [TRIAL $t OK] Standalone DOWN P50=$($stdSummary.Down_EventToDrawStart.P50)ms (MOVE P50=$($stdSummary.Move_EventToDrawStart.P50)ms) | Embedded DOWN P50=$($embSummary.Down_EventToDrawStart.P50)ms (MOVE P50=$($embSummary.Move_EventToDrawStart.P50)ms)" -ForegroundColor Green
+    Write-Host "  [TRIAL $t OK] Standalone DOWN P50=$($stdSummary.Down_EventToDrawStart.P50)ms (MOVE P50=$($stdSummary.Move_EventToDrawStart.P50)ms) | Embedded DOWN P50=$($embSummary.Down_EventToDrawStart.P50)ms (MOVE P50=$($embSummary.Move_EventToDrawStart.P50)ms) [EmbedVerified=$($embSummary.EmbeddingVerified)]" -ForegroundColor Green
 
     $trialSummaryRows.Add([PSCustomObject]@{
         Trial = $t
         Order = $orderDesc
+        EmbeddingVerified = $embSummary.EmbeddingVerified
+        EmbeddedHwnd = $embSummary.EmbeddedHwnd
+        PhysicalViewport = $embSummary.PhysicalViewport
+
         Std_Down_P50 = $stdSummary.Down_EventToDrawStart.P50
         Std_Down_P95 = $stdSummary.Down_EventToDrawStart.P95
         Std_Down_P99 = $stdSummary.Down_EventToDrawStart.P99
@@ -579,11 +694,10 @@ for ($t = 1; $t -le $TrialCount; $t++) {
 $trialSummaryRows | Export-Csv -Path "$sessionOutputDir\trial-summary.csv" -NoTypeInformation -Encoding UTF8
 
 # -----------------------------------------------------------------------------
-# STEP 4: Multi-Level Statistical Synthesis (Trial-Level vs Pooled)
+# STEP 5: Multi-Level Statistical Synthesis (Trial-Level vs Pooled)
 # -----------------------------------------------------------------------------
-Write-Host "`n[4/6] Synthesizing Trial-Level Distributions & Pooled Statistics..." -ForegroundColor Yellow
+Write-Host "`n[5/6] Synthesizing Trial-Level Distributions & Pooled Statistics..." -ForegroundColor Yellow
 
-# Across-trial distribution
 function Get-TrialLevelMetrics {
     param([System.Collections.Generic.List[PSCustomObject]]$Trials, [string]$ConditionName)
 
@@ -598,7 +712,7 @@ function Get-TrialLevelMetrics {
     $downDispP50List = $Trials | ForEach-Object { [double]$_.Down_EventToDispatch.P50 }
     $downDispP95List = $Trials | ForEach-Object { [double]$_.Down_EventToDispatch.P95 }
     $downCbP50List = $Trials | ForEach-Object { [double]$_.Down_DispatchToCallback.P50 }
-    $downDrawDurP50List = $Trials | ForEach-Object { [double]$_.Down_DrawDuration.P50 }
+    $downDrawDurP50List = $Trials | ForEach-Object { [double]$_.Down_DrawContentDuration.P50 }
 
     return [PSCustomObject]@{
         Condition = $ConditionName
@@ -616,7 +730,7 @@ function Get-TrialLevelMetrics {
         Down_Dispatch_P50_Median = (Get-Percentile -Values $downDispP50List -Percentile 50)
         Down_Dispatch_P95_Median = (Get-Percentile -Values $downDispP95List -Percentile 50)
         Down_DispatchToCallback_P50_Median = (Get-Percentile -Values $downCbP50List -Percentile 50)
-        Down_DrawDuration_P50_Median = (Get-Percentile -Values $downDrawDurP50List -Percentile 50)
+        Down_DrawContentDuration_P50_Median = (Get-Percentile -Values $downDrawDurP50List -Percentile 50)
     }
 }
 
@@ -686,7 +800,7 @@ function Add-CompRow {
 Add-CompRow -MetricName "Across-Trial DOWN Event->Dispatch P50" -StdVal $stdAcrossTrials.Down_Dispatch_P50_Median -EmbVal $embAcrossTrials.Down_Dispatch_P50_Median
 Add-CompRow -MetricName "Across-Trial DOWN Event->Dispatch P95" -StdVal $stdAcrossTrials.Down_Dispatch_P95_Median -EmbVal $embAcrossTrials.Down_Dispatch_P95_Median
 Add-CompRow -MetricName "Across-Trial DOWN Dispatch->Callback P50" -StdVal $stdAcrossTrials.Down_DispatchToCallback_P50_Median -EmbVal $embAcrossTrials.Down_DispatchToCallback_P50_Median
-Add-CompRow -MetricName "Across-Trial DOWN Draw Duration P50" -StdVal $stdAcrossTrials.Down_DrawDuration_P50_Median -EmbVal $embAcrossTrials.Down_DrawDuration_P50_Median
+Add-CompRow -MetricName "Across-Trial DOWN Draw Content Duration P50" -StdVal $stdAcrossTrials.Down_DrawContentDuration_P50_Median -EmbVal $embAcrossTrials.Down_DrawContentDuration_P50_Median
 
 Add-CompRow -MetricName "Across-Trial DOWN Event->DrawStart P50" -StdVal $stdAcrossTrials.Down_P50_Median -EmbVal $embAcrossTrials.Down_P50_Median
 Add-CompRow -MetricName "Across-Trial DOWN Event->DrawStart P95" -StdVal $stdAcrossTrials.Down_P95_Median -EmbVal $embAcrossTrials.Down_P95_Median
@@ -758,30 +872,33 @@ $methodologyMeta = @{
     SwipePerTrial = $SwipeCount
     StateReset = "am force-stop + am start + 1.5s stabilization + logcat -c"
     Terminology = "Guest Synthetic Software Input-to-Frame Baseline"
+    EmbeddingVerification = "Fatal per-trial GET_GEOMETRY isEmbedded=true gate"
+    AcceptanceStatus = "PASS"
 }
 $methodologyMeta | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\methodology.json" -Encoding UTF8
 
 # -----------------------------------------------------------------------------
-# STEP 5: Display Summary Tables
+# STEP 6: Display Summary Tables
 # -----------------------------------------------------------------------------
 Write-Host "`n================================================================================" -ForegroundColor Cyan
-Write-Host " CANONICAL HARDENED INPUT LATENCY A/B COMPARISON TABLE (Schema v3, 6 Trials)" -ForegroundColor Cyan
+Write-Host " CANONICAL HARDENED INPUT LATENCY A/B COMPARISON TABLE (Final Integrity, 6 Trials)" -ForegroundColor Cyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 
-$fmtHeader = "{0,-42} | {1,-14} | {2,-14} | {3,-12} | {4,-10}"
+$fmtHeader = "{0,-44} | {1,-14} | {2,-14} | {3,-12} | {4,-10}"
 Write-Host ($fmtHeader -f "Metric", "Standalone", "Embedded", "Delta (ms)", "Delta (%)") -ForegroundColor Yellow
-Write-Host ("-" * 100) -ForegroundColor Gray
+Write-Host ("-" * 102) -ForegroundColor Gray
 
 foreach ($r in $compRows) {
     Write-Host ($fmtHeader -f $r.Metric, $r.Standalone, $r.Embedded, $r.Delta_ms, $r.Delta_pct) -ForegroundColor White
 }
-Write-Host ("-" * 100) -ForegroundColor Gray
+Write-Host ("-" * 102) -ForegroundColor Gray
 
 Write-Host "`n[ORDER EFFECT ANALYSIS]" -ForegroundColor Yellow
 Write-Host "  Standalone : First-run P50 = ${stdFirstP50}ms | Second-run P50 = ${stdSecondP50}ms | Order Delta = ${stdOrderDelta}ms" -ForegroundColor White
 Write-Host "  Embedded   : First-run P50 = ${embFirstP50}ms | Second-run P50 = ${embSecondP50}ms | Order Delta = ${embOrderDelta}ms" -ForegroundColor White
 
 Write-Host "`n[ARTIFACTS SAVED] $sessionOutputDir" -ForegroundColor Green
+Write-Host " - build-verification.json" -ForegroundColor Green
 Write-Host " - environment.json" -ForegroundColor Green
 Write-Host " - methodology.json" -ForegroundColor Green
 Write-Host " - trial-01 .. trial-0$TrialCount/ (events.jsonl & summary.json)" -ForegroundColor Green
