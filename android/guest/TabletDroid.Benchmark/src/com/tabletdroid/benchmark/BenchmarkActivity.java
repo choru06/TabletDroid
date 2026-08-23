@@ -195,7 +195,9 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
             @Override
             public void run() {
                 stopAutoScroll();
-                BenchmarkState.currentStatus = BenchmarkState.Status.IDLE;
+                if (BenchmarkState.currentStatus != BenchmarkState.Status.COMPLETE) {
+                    BenchmarkState.currentStatus = BenchmarkState.Status.IDLE;
+                }
                 tvStatus.setText("STATUS: STOPPED");
                 tvStatus.setTextColor(Color.parseColor("#F43F5E"));
                 emitStatusJson();
@@ -310,7 +312,7 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
             elapsedMs = System.currentTimeMillis() - BenchmarkState.warmupStartMs;
         } else if (BenchmarkState.currentStatus == BenchmarkState.Status.RUNNING && BenchmarkState.measureStartMs > 0) {
             elapsedMs = System.currentTimeMillis() - BenchmarkState.measureStartMs;
-        } else if (BenchmarkState.currentStatus == BenchmarkState.Status.COMPLETE && BenchmarkState.measureEndMs > BenchmarkState.measureStartMs) {
+        } else if (BenchmarkState.measureEndMs > BenchmarkState.measureStartMs) {
             elapsedMs = BenchmarkState.measureEndMs - BenchmarkState.measureStartMs;
         }
 
@@ -322,7 +324,7 @@ public class BenchmarkActivity extends Activity implements BenchmarkState.StateL
         long elapsedMs = 0;
         if (BenchmarkState.currentStatus == BenchmarkState.Status.RUNNING && BenchmarkState.measureStartMs > 0) {
             elapsedMs = System.currentTimeMillis() - BenchmarkState.measureStartMs;
-        } else if (BenchmarkState.currentStatus == BenchmarkState.Status.COMPLETE && BenchmarkState.measureEndMs > BenchmarkState.measureStartMs) {
+        } else if (BenchmarkState.measureEndMs > BenchmarkState.measureStartMs) {
             elapsedMs = BenchmarkState.measureEndMs - BenchmarkState.measureStartMs;
         }
 

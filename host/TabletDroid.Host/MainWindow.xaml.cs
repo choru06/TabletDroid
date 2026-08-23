@@ -54,7 +54,10 @@ public partial class MainWindow : Window
         Closing += OnMainWindowClosing;
         SizeChanged += (s, e) => UpdateEmbeddedViewport();
 
-        StartAutomationServer();
+        if (Environment.GetCommandLineArgs().Contains("--automation"))
+        {
+            StartAutomationServer();
+        }
     }
 
     private async void OnMainWindowLoaded(object sender, RoutedEventArgs e)
