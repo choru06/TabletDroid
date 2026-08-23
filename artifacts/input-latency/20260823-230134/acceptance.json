@@ -1,0 +1,18 @@
+﻿{
+    "SourceTreeClean":  true,
+    "CanonicalResult":  "PASS",
+    "GraphicsTransportVerified":  true,
+    "Timestamp":  "20260823-230134",
+    "TestsPassed":  true,
+    "TotalRejectedRecords":  0,
+    "DisplayVerified":  true,
+    "GuestFingerprintVerified":  true,
+    "SourceCommitVerified":  true,
+    "TotalValidRecords":  9491,
+    "ExpectedEmbeddingTrials":  6,
+    "RefreshPolicyVerified":  true,
+    "EmbeddingTrialsVerified":  6,
+    "TestCount":  19,
+    "EventIntegrityPassed":  true,
+    "BuildPassed":  true
+}

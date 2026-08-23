@@ -1,0 +1,3 @@
+﻿"Condition","FirstRunMeanP50","SecondRunMeanP50","OrderDelta"
+"Standalone_Emulator","6.632 ms","6.995 ms","+0.363 ms"
+"Host_Embedded_SetParent","5.915 ms","6.276 ms","+0.361 ms"

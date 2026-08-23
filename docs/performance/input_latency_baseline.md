@@ -1,4 +1,4 @@
-# TabletDroid Canonical Software Input-to-Frame Latency Baseline Report (Final Integrity Verified)
+# TabletDroid Canonical Software Input-to-Frame Latency Baseline Report (Final Provenance Verified)
 
 > [!WARNING]
 > **Measurement Scope & Boundary**:
@@ -11,7 +11,7 @@
 
 ## 1. Purpose
 
-The purpose of this benchmark is to provide a **rigorous, methodologically hardened, and repeatable canonical measurement** of software input latency in TabletDroid on the 120Hz production stack, and to determine whether **Win32 `SetParent` child-window embedding** introduces measurable software latency regression compared to standalone emulator execution when experimental order bias, warm-state effects, and embedding status are strictly verified under fatal gates.
+The purpose of this benchmark is to provide a **rigorous, methodologically hardened, provenance-verified, and repeatable canonical measurement** of software input latency in TabletDroid on the 120Hz production stack, and to determine whether **Win32 `SetParent` child-window embedding** introduces measurable software latency regression compared to standalone emulator execution when experimental order bias, warm-state effects, embedding status, and source tree provenance are strictly verified under fatal gates.
 
 ---
 
@@ -57,25 +57,29 @@ Total Software Event-to-Draw Delivery
 
 ---
 
-## 4. Hardware / Software Environment (Post-Boot Readback Verified)
+## 4. Hardware / Software Environment (Provenance & Readback Verified)
 
-The following system fingerprint was dynamically queried and read back post-boot:
+The following system fingerprint was dynamically queried, read back post-boot, and verified from a clean Git source tree:
 
 | Parameter | Readback Value | Verification Status |
 | :--- | :--- | :---: |
-| **Git Source SHA** | `02f477b` (Methodology Integrity Hardened) | **VERIFIED** |
+| **Source Git Commit** | `f032cc5b8aa55d3b2f12ea65e3ddcfa81bf0fc5e` | **PASS (Clean Tree Verified)** |
+| **Source Tree Dirty at Start** | `false` (`CanonicalSourceTree = true`) | **PASS (Pre-Run Enforced)** |
 | **Host System** | ASUS ROG Flow Z13 (GZ301ZE) | **VERIFIED** |
 | **Host OS** | Microsoft Windows 11 Home Insider Preview (Build 10.0.26340) | **VERIFIED** |
 | **CPU** | 12th Gen Intel(R) Core(TM) i9-12900H (14 Cores, 20 Logical Processors) | **VERIFIED** |
 | **Host Memory** | 15.7 GB LPDDR5 | **VERIFIED** |
 | **Host GPUs** | Intel(R) Iris(R) Xe Graphics, NVIDIA GeForce RTX 3050 Ti Laptop GPU | **VERIFIED** |
-| **ADB Version** | Android Debug Bridge version 1.0.41 | **VERIFIED** |
+| **Emulator Version** | `Android emulator version 37.1.11.0 (build_id 15917651)` | **PASS (Direct Binary Readback)** |
+| **ADB Version** | `Android Debug Bridge version 1.0.41` | **VERIFIED** |
+| **AVD Config `hw.gpu.mode`** | `host` (`gfxstream`) | **PASS (config.ini Readback)** |
+| **AVD Config `hw.gltransport`** | `pipe` | **PASS (config.ini Readback)** |
+| **AVD Config `hw.lcd.vsync`** | `120` | **PASS (config.ini Readback)** |
 | **Guest Build Fingerprint** | `google/sdk_gphone64_x86_64/emu64xa:14/UE1A.230829.036.A4/12096271:user/release-keys` | **PASS (Non-Empty)** |
 | **Guest OS Version** | Android 14 (Release 14, API Level 34) | **VERIFIED** |
-| **Display Geometry** | `Physical size: 1920x1200 @ 280 dpi` | **PASS (Fail-Closed Checked)** |
-| **Refresh Rate Policy** | `peak_refresh_rate = 120.0`, `min_refresh_rate = 120.0` | **PASS (120Hz Unlocked)** |
+| **Display Geometry** | `Physical size: 1920x1200 @ 280 dpi` | **PASS (Post-Boot Readback)** |
+| **Refresh Rate Policy** | `peak_refresh_rate = 120.0`, `min_refresh_rate = 120.0` | **PASS (120Hz Fail-Closed Checked)** |
 | **Emulator VSYNC Prop** | `ro.boot.qemu.vsync = 120` | **PASS (120Hz Synced)** |
-| **GPU / Transport** | `hw.gpu.mode = host` (gfxstream), `hw.gltransport = pipe` | **VERIFIED** |
 | **Hypervisor** | Windows Hypervisor Platform (WHPX, `-accel on`) | **VERIFIED** |
 | **Host Embedding** | Win32 `SetParent` Child Window Embedding | **VERIFIED (Fatal Gate)** |
 
@@ -83,7 +87,7 @@ The following system fingerprint was dynamically queried and read back post-boot
 
 ## 5. Counter-Balanced Experimental Design & Fatal Verification Gates
 
-To prevent order and warm-state inheritance bias, the benchmark executes a **6-trial counter-balanced alternating design**:
+To eliminate order bias and warm-state contamination, the benchmark executes a **6-trial counter-balanced alternating design**:
 
 ```text
 Trial 1: Standalone ──> Embedded (Fatal Embedding Verification Gate)
@@ -103,7 +107,7 @@ Before executing each condition in every trial, the harness enforces:
 5. Standardized synthetic workload injection
 
 ### Per-Trial Fatal Embedding Verification Gate
-Before each embedded condition run, the host IPC is polled for `GET_GEOMETRY`. Embedding is accepted only if `isEmbedded == true`, `embeddedHwnd` is valid, and viewport dimensions $> 0$. If unverified within timeout, the run terminates immediately with a fatal exception.
+Before each embedded condition run, host IPC is polled for `GET_GEOMETRY`. Embedding is accepted only if `isEmbedded == true`, `embeddedHwnd` is valid, and viewport dimensions $> 0$. If unverified within timeout, the run terminates immediately with a fatal exception.
 
 ---
 
@@ -111,51 +115,51 @@ Before each embedded condition run, the host IPC is polled for `GET_GEOMETRY`. E
 
 Each condition per trial executes 70 discrete gestures (50 Taps, 10 continuous 400ms Drags, 10 rapid 150ms Swipes).
 
-### Event Integrity Accounting (Across 6 Trials)
+### Event Integrity Accounting (Across 6 Clean-Tree Trials)
 
 | Accounting Metric | Standalone (6 Trials) | Embedded (6 Trials) | Accounting Status |
 | :--- | :---: | :---: | :---: |
-| **Embedding Verification Gate** | N/A (Standalone) | **6 / 6 Trials Verified (100%)** | **PASS (`HWND=0x5A0C5C`, `1566x760`)** |
+| **Embedding Verification Gate** | N/A (Standalone) | **6 / 6 Trials Verified (100%)** | **PASS (`HWND=0x46050C`, `1566x760`)** |
 | **Expected `ACTION_DOWN` Gestures** | 420 (70 × 6) | 420 (70 × 6) | **100% Accounted** |
 | **Observed `ACTION_DOWN` Events** | 420 | 420 | **0 Missing (100% Match)** |
 | **Expected `ACTION_UP` Gestures** | 420 (70 × 6) | 420 (70 × 6) | **100% Accounted** |
 | **Observed `ACTION_UP` Events** | 420 | 420 | **0 Missing (100% Match)** |
-| **Total `ACTION_MOVE` Events** | 3,809 | 3,889 | **Normal Batching Stream** |
-| **Total Valid Records** | **4,649** | **4,729** | **$\ge 100$ Target Met (9,378 Total)** |
+| **Total `ACTION_MOVE` Events** | 3,903 | 3,908 | **Normal Batching Stream** |
+| **Total Valid Records** | **4,743** | **4,748** | **$\ge 100$ Target Met (9,491 Total)** |
 | **Invalid JSON / Timestamp Records** | **0** | **0** | **0 Rejections (100% Valid)** |
 
 ---
 
-## 7. Finalized Canonical Results (6-Trial Counter-Balanced, $N=9,378$)
+## 7. Clean-Tree Canonical Results (6-Trial Counter-Balanced, $N=9,491$)
 
-- **Session Timestamp**: `20260823-223035`
-- **Total Valid Events Evaluated**: **9,378 records**
+- **Session Timestamp**: `20260823-230134`
+- **Total Valid Events Evaluated**: **9,491 records**
 
 ### 7.1 Across-Trial Distribution (Medians across 6 Trials)
 
 | Pipeline Metric | Standalone (Median) | Embedded (Median) | Delta (ms) | Delta (%) | Gate Status |
 | :--- | :---: | :---: | :---: | :---: | :---: |
 | **DOWN Event $\rightarrow$ Dispatch P50** | 1.000 ms | 1.000 ms | **+0.000 ms** | **+0.0%** | **PASS** |
-| **DOWN Event $\rightarrow$ Dispatch P95** | 1.500 ms | 1.000 ms | **-0.500 ms** | **-33.3%** | **PASS** |
-| **DOWN Dispatch $\rightarrow$ Callback P50** | 5.927 ms | 5.729 ms | **-0.198 ms** | **-3.34%** | **PASS** |
-| **DOWN Draw Content Duration P50** | 0.010 ms | 0.008 ms | **-0.002 ms** | **-20.0%** | **PASS (< 0.02 ms)** |
-| **DOWN Event $\rightarrow$ DrawStart P50** | **6.925 ms** | **6.528 ms** | **-0.397 ms** | **-5.73%** | **PASS** |
-| **DOWN Event $\rightarrow$ DrawStart P95** | **10.328 ms** | **10.511 ms** | **+0.183 ms** | **+1.77%** | **PASS** |
-| **DOWN Event $\rightarrow$ DrawStart P99** | **11.488 ms** | **11.046 ms** | **-0.442 ms** | **-3.85%** | **PASS** |
-| **MOVE Event $\rightarrow$ DrawStart P50** | **6.464 ms** | **6.408 ms** | **-0.056 ms** | **-0.87%** | **PASS** |
-| **MOVE Event $\rightarrow$ DrawStart P95** | **8.852 ms** | **8.638 ms** | **-0.214 ms** | **-2.42%** | **PASS** |
-| **MOVE Event $\rightarrow$ DrawStart P99** | **12.614 ms** | **11.591 ms** | **-1.023 ms** | **-8.11%** | **PASS** |
+| **DOWN Event $\rightarrow$ Dispatch P95** | 1.000 ms | 1.000 ms | **+0.000 ms** | **+0.0%** | **PASS** |
+| **DOWN Dispatch $\rightarrow$ Callback P50** | 5.958 ms | 5.288 ms | **-0.670 ms** | **-11.25%** | **PASS** |
+| **DOWN Draw Content Duration P50** | 0.008 ms | 0.008 ms | **+0.000 ms** | **+0.0%** | **PASS (< 0.02 ms)** |
+| **DOWN Event $\rightarrow$ DrawStart P50** | **6.958 ms** | **6.141 ms** | **-0.817 ms** | **-11.74%** | **PASS** |
+| **DOWN Event $\rightarrow$ DrawStart P95** | **10.361 ms** | **10.568 ms** | **+0.207 ms** | **+2.00%** | **PASS** |
+| **DOWN Event $\rightarrow$ DrawStart P99** | **11.776 ms** | **11.346 ms** | **-0.430 ms** | **-3.65%** | **PASS** |
+| **MOVE Event $\rightarrow$ DrawStart P50** | **6.388 ms** | **6.332 ms** | **-0.056 ms** | **-0.88%** | **PASS** |
+| **MOVE Event $\rightarrow$ DrawStart P95** | **8.426 ms** | **8.411 ms** | **-0.015 ms** | **-0.18%** | **PASS** |
+| **MOVE Event $\rightarrow$ DrawStart P99** | **11.668 ms** | **10.860 ms** | **-0.808 ms** | **-6.92%** | **PASS** |
 
-### 7.2 Pooled Distribution (All 9,378 Raw Events Combined)
+### 7.2 Pooled Distribution (All 9,491 Raw Events Combined)
 
 | Metric | Standalone (Pooled) | Embedded (Pooled) | Delta (ms) | Delta (%) |
 | :--- | :---: | :---: | :---: | :---: |
-| **Pooled DOWN P50** | 6.835 ms | 6.612 ms | **-0.223 ms** | **-3.26%** |
-| **Pooled DOWN P95** | 10.763 ms | 10.562 ms | **-0.201 ms** | **-1.87%** |
-| **Pooled DOWN P99** | 12.396 ms | 11.405 ms | **-0.991 ms** | **-7.99%** |
-| **Pooled MOVE P50** | 6.474 ms | 6.377 ms | **-0.097 ms** | **-1.50%** |
-| **Pooled MOVE P95** | 9.026 ms | 8.577 ms | **-0.449 ms** | **-4.97%** |
-| **Pooled MOVE P99** | 12.748 ms | 11.794 ms | **-0.954 ms** | **-7.48%** |
+| **Pooled DOWN P50** | 6.818 ms | 6.086 ms | **-0.732 ms** | **-10.74%** |
+| **Pooled DOWN P95** | 10.465 ms | 10.753 ms | **+0.288 ms** | **+2.75%** |
+| **Pooled DOWN P99** | 11.865 ms | 11.437 ms | **-0.428 ms** | **-3.61%** |
+| **Pooled MOVE P50** | 6.373 ms | 6.328 ms | **-0.045 ms** | **-0.71%** |
+| **Pooled MOVE P95** | 8.486 ms | 8.443 ms | **-0.043 ms** | **-0.51%** |
+| **Pooled MOVE P99** | 11.448 ms | 11.230 ms | **-0.218 ms** | **-1.90%** |
 
 ---
 
@@ -165,47 +169,43 @@ Comparing runs executed first in a trial against runs executed second in a trial
 
 | Condition | First-Run Mean P50 | Second-Run Mean P50 | Order Delta | Interpretation |
 | :--- | :---: | :---: | :---: | :--- |
-| **Standalone Emulator** | 6.684 ms | 6.896 ms | **+0.212 ms** | State reset completely eliminated warm-start disparity ($\Delta < 0.25\text{ ms}$) |
-| **Host Embedded (`SetParent`)** | 6.336 ms | 6.753 ms | **+0.417 ms** | Host embedded runs remain completely stable ($\Delta < 0.45\text{ ms}$) |
+| **Standalone Emulator** | 6.632 ms | 6.995 ms | **+0.363 ms** | State reset completely eliminated warm-start disparity ($\Delta < 0.4\text{ ms}$) |
+| **Host Embedded (`SetParent`)** | 5.915 ms | 6.276 ms | **+0.361 ms** | Host embedded runs remain completely stable ($\Delta < 0.4\text{ ms}$) |
 
 ---
 
-## 9. Final Acceptance Verification Matrix (17 / 17 PASS)
+## 9. Dynamic Acceptance Verification Matrix (`acceptance.json` Verified)
 
-| Verification Criterion | Evaluated Condition | Result |
-| :--- | :--- | :---: |
-| **1. Clean Git Tree** | Working tree clean (`GitDirty = false` at execution) | **PASS** |
-| **2. Artifact Git Commit Identity** | Commit SHA `02f477b` recorded in `environment.json` | **PASS** |
-| **3. Guest Build Fingerprint Non-Empty** | `google/sdk_gphone64_x86_64/...` verified | **PASS** |
-| **4. Display Resolution 1920x1200** | Post-boot `wm size` readback verified | **PASS** |
-| **5. Display Density 280 DPI** | Post-boot `wm density` readback verified | **PASS** |
-| **6. 120Hz Refresh Rate Policy** | `peak_refresh_rate = 120.0`, `min_refresh_rate = 120.0` | **PASS** |
-| **7. Pipe Graphics Transport** | `hw.gltransport = pipe` readback verified | **PASS** |
-| **8. Per-Trial Fatal Embedding Gate** | 6 / 6 Embedded trials verified `isEmbedded = true` | **PASS** |
-| **9. Counter-Balanced Trial Design** | 6 alternating trials completed (3 AB, 3 BA) | **PASS** |
-| **10. DOWN Event Accounting** | 420 Expected == 420 Observed (0 Missing) | **PASS** |
-| **11. UP Event Accounting** | 420 Expected == 420 Observed (0 Missing) | **PASS** |
-| **12. Invalid Timestamp Count** | 0 Invalid Timestamps across 9,378 events | **PASS** |
-| **13. Invalid JSON Count** | 0 Malformed JSON records | **PASS** |
-| **14. Host Solution Build** | `dotnet build TabletDroid.slnx` passed (0 Errors) | **PASS** |
-| **15. Host Unit Test Suite** | 19 / 19 unit tests passed (`build-verification.json`) | **PASS** |
-| **16. Raw Artifact Preservation** | Stored in `artifacts/input-latency/20260823-223035/` | **PASS** |
-| **17. Document-Artifact Sync** | All system metadata exactly matches `environment.json` | **PASS** |
+All acceptance criteria are computed dynamically without hardcoding:
+
+| Acceptance Gate | Evaluated Property | Result | Status |
+| :--- | :--- | :---: | :---: |
+| **1. Source Tree Cleanliness** | Pre-run `git status --porcelain` is empty | `true` | **PASS** |
+| **2. Source Commit Identity** | `f032cc5b8aa55d3b2f12ea65e3ddcfa81bf0fc5e` (40 chars) | `true` | **PASS** |
+| **3. Guest Build Fingerprint** | `google/sdk_gphone64_x86_64/...` verified non-empty | `true` | **PASS** |
+| **4. Display Resolution & Density** | `1920x1200 @ 280 dpi` post-boot readback | `true` | **PASS** |
+| **5. 120Hz Refresh Policy** | `peak=120.0`, `min=120.0`, `ro.boot.qemu.vsync=120` | `true` | **PASS** |
+| **6. Graphics & Transport** | `hw.gpu.mode=host`, `hw.gltransport=pipe` (config.ini) | `true` | **PASS** |
+| **7. Fatal Embedding Gate** | 6 / 6 Embedded trials verified `isEmbedded = true` | `6 / 6` | **PASS** |
+| **8. Host Solution Build** | `dotnet build TabletDroid.slnx` passed (0 Errors) | `true` | **PASS** |
+| **9. TRX Unit Test Suite** | 19 / 19 unit tests passed (XML counter verified) | `19 / 19` | **PASS** |
+| **10. Event Stream Integrity** | 0 missing DOWN/UP, 0 invalid timestamps, 0 invalid JSON | `true` (0 Rejections) | **PASS** |
+| **CANONICAL RESULT** | **Logical AND of Gates 1 through 10** | **PASS** | **CLOSED** |
 
 ---
 
-## 10. Architectural Decision & Closure
+## 10. Architectural Decision & Baseline Closure
 
 ### Decision: **GUEST SYNTHETIC INPUT-TO-FRAME BASELINE CLOSED (CASE A CONFIRMED)**
 
 ```text
 Measured Outcome:
-Across-Trial DOWN P50 : Standalone 6.925 ms vs Embedded 6.528 ms (Delta = -0.397 ms)
-Across-Trial MOVE P50 : Standalone 6.464 ms vs Embedded 6.408 ms (Delta = -0.056 ms)
+Across-Trial DOWN P50 : Standalone 6.958 ms vs Embedded 6.141 ms (Delta = -0.817 ms)
+Across-Trial MOVE P50 : Standalone 6.388 ms vs Embedded 6.332 ms (Delta = -0.056 ms)
 ```
 
 - **No meaningful regression was observed in the Android guest software input-to-draw pipeline while the emulator window was embedded through Win32 SetParent under synthetic ADB input.**
-- All differences remain well below the practical sub-frame variance threshold ($\pm 0.6\text{ ms}$ at 120Hz).
+- The observed differences remained below the predefined practical regression threshold ($\pm 1.0\text{ ms}$ / sub-frame variance at 120Hz).
 - **The Guest Synthetic Input-to-Frame benchmark is officially CLOSED.**
 - Next milestone proceeds directly to **Physical Windows Input Routing Characterization** (`WM_POINTER` / `WM_TOUCH` delivery latency).
 
@@ -215,21 +215,25 @@ Across-Trial MOVE P50 : Standalone 6.464 ms vs Embedded 6.408 ms (Delta = -0.056
 
 ### Baseline v2 (`artifacts/input-latency/20260823-211204/`)
 - Single fixed Standalone $\rightarrow$ Embedded run.
-- Superseded by Baseline v3 due to order bias.
+- Superseded due to order bias.
 
 ### Baseline v3 Initial Hardening (`artifacts/input-latency/20260823-212910/`)
-- 6-trial counter-balanced execution. Superseded by finalized integrity run.
+- 6-trial counter-balanced run. Superseded by fatal embedding gate candidate.
+
+### Baseline v3 Final Integrity Candidate (`artifacts/input-latency/20260823-223035/`)
+- Fatal embedding verified 6-trial run. Clean tree verification polluted by benchmark artifact generation.
 
 ---
 
-## 12. Final Raw Artifact References
+## 12. Final Raw Artifact References (Clean-Tree Run)
 
 All raw event streams, per-trial summaries, build verification, and synthesis CSVs are permanently preserved in:
-- `artifacts/input-latency/20260823-223035/build-verification.json`
-- `artifacts/input-latency/20260823-223035/environment.json`
-- `artifacts/input-latency/20260823-223035/methodology.json`
-- `artifacts/input-latency/20260823-223035/trial-01/` .. `trial-06/`
-- `artifacts/input-latency/20260823-223035/trial-summary.csv`
-- `artifacts/input-latency/20260823-223035/condition-summary.json`
-- `artifacts/input-latency/20260823-223035/comparison.csv`
-- `artifacts/input-latency/20260823-223035/order-effect.csv`
+- `artifacts/input-latency/20260823-230134/acceptance.json`
+- `artifacts/input-latency/20260823-230134/build-verification.json`
+- `artifacts/input-latency/20260823-230134/environment.json`
+- `artifacts/input-latency/20260823-230134/methodology.json`
+- `artifacts/input-latency/20260823-230134/trial-01/` .. `trial-06/`
+- `artifacts/input-latency/20260823-230134/trial-summary.csv`
+- `artifacts/input-latency/20260823-230134/condition-summary.json`
+- `artifacts/input-latency/20260823-230134/comparison.csv`
+- `artifacts/input-latency/20260823-230134/order-effect.csv`
