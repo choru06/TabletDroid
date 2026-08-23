@@ -1,15 +1,18 @@
 # ==============================================================================
 # TabletDroid Canonical Software Input-to-Frame Latency Benchmark Suite
-# Final Integrity Verification Baseline v3:
+# Provenance Hardened Baseline v3:
+# - Pre-run source tree cleanliness check (enforces clean working tree)
 # - Schema v3: Separates Choreographer VSYNC time from Callback execution time
 # - drawStart vs drawContentEnd separation and draw content duration
 # - Fatal per-trial Win32 SetParent embedding verification gate (fail-closed)
 # - Post-boot guest configuration readback & fail-closed fingerprint verification
-# - Full solution build & test verification gate (build-verification.json)
+# - AVD config.ini direct readback (hw.gpu.mode, hw.gltransport, hw.lcd.vsync)
+# - Direct emulator binary version querying
+# - TRX XML-based unit test counter verification
 # - Counter-balanced A/B design (AB / BA alternation across 6 trials)
 # - Deterministic per-condition state reset (eliminates order/warm bias)
 # - Per-trial, across-trial, pooled statistics, and order effect analysis
-# - Git commit SHA & working tree dirty tracking
+# - Dynamic acceptance.json generation (no hardcoded acceptance status)
 # ==============================================================================
 param(
     [string]$DeviceSerial = "emulator-5554",
@@ -24,6 +27,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# -----------------------------------------------------------------------------
+# STEP 0: Pre-Run Source Provenance & Cleanliness Verification
+# (Checked BEFORE creating sessionOutputDir or modifying any files)
+# -----------------------------------------------------------------------------
+$sourceCommit = try { (git rev-parse HEAD).Trim() } catch { "UNKNOWN" }
+$preRunGitStatus = try { (git status --porcelain).Trim() } catch { "" }
+$sourceTreeDirty = [bool]($preRunGitStatus.Length -gt 0)
+
+if ($sourceTreeDirty) {
+    throw "[FATAL] Canonical benchmark requires a clean source tree. Working tree is dirty:`n$preRunGitStatus"
+}
 
 $rootDir = (Resolve-Path "$PSScriptRoot\..\..").Path
 $avdConfigPath = "$env:USERPROFILE\.android\avd\$AvdName.avd\config.ini"
@@ -53,8 +68,9 @@ $sessionOutputDir = "$OutputDir\$timestamp"
 New-Item -ItemType Directory -Path $sessionOutputDir -Force | Out-Null
 
 Write-Host "================================================================================" -ForegroundColor Cyan
-Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark (Final Integrity)" -ForegroundColor Cyan
+Write-Host " TabletDroid Canonical Software Input-to-Frame Latency Benchmark (Provenance Hardened)" -ForegroundColor Cyan
 Write-Host " Timestamp         : $timestamp" -ForegroundColor Cyan
+Write-Host " Source Git Commit : $sourceCommit (Clean: $(-not $sourceTreeDirty))" -ForegroundColor Cyan
 Write-Host " Counter-Balance   : $TrialCount Trials (Alternating AB / BA Order)" -ForegroundColor Cyan
 Write-Host " Baseline Config   : 1920x1200 @ 120Hz, gfxstream, pipe transport, WHPX" -ForegroundColor Cyan
 Write-Host " Benchmark Package : com.tabletdroid.benchmark/.InputProbeActivity (Schema v3)" -ForegroundColor Cyan
@@ -152,44 +168,59 @@ function Invoke-HostCmd {
 }
 
 # -----------------------------------------------------------------------------
-# STEP 1: Host Solution Build & Test Verification Gate
+# STEP 1: Host Solution Build & TRX Unit Test Verification Gate
 # -----------------------------------------------------------------------------
-Write-Host "`n[1/6] Running Host Solution Build & Unit Test Verification..." -ForegroundColor Yellow
+Write-Host "`n[1/6] Running Host Solution Build & TRX Unit Test Verification..." -ForegroundColor Yellow
 
 $hostSln = "$rootDir\host\TabletDroid.slnx"
 $hostTests = "$rootDir\host\TabletDroid.Tests"
 
 $buildOut = (& $dotnet build "$hostSln" 2>&1) | Out-String
 $solutionBuildPassed = ($LASTEXITCODE -eq 0)
-if (-not $solutionBuildPassed) { throw "[FATAL] Host solution build failed!" }
+if (-not $solutionBuildPassed) { throw "[FATAL] Host solution build failed!`n$buildOut" }
 
-$testStdout = (& $dotnet test "$hostTests" 2>&1) | Out-String
+$trxPath = "$sessionOutputDir\test_results.trx"
+$testStdout = (& $dotnet test "$hostTests" --logger "trx;LogFileName=$trxPath" 2>&1) | Out-String
 $unitTestsPassed = ($LASTEXITCODE -eq 0)
 
-$testTotal = 19
-$testPassedCount = 19
+$testTotal = 0
+$testPassedCount = 0
 $testFailedCount = 0
+$testSkippedCount = 0
+$testCountVerified = $false
 
-if ($testStdout -match ":\s*(\d+)\s*,\s*[^:]+:\s*(\d+)\s*,\s*[^:]+:\s*(\d+)\s*,\s*[^:]+:\s*(\d+)") {
-    $testFailedCount = [int]$Matches[1]
-    $testPassedCount = [int]$Matches[2]
-    $testTotal = [int]$Matches[4]
+if (Test-Path $trxPath) {
+    try {
+        [xml]$trxXml = Get-Content $trxPath
+        $counters = $trxXml.TestRun.ResultSummary.Counters
+        $testTotal = [int]$counters.total
+        $testPassedCount = [int]$counters.passed
+        $testFailedCount = [int]$counters.failed
+        $testSkippedCount = [int]$counters.skipped
+        if ($testTotal -gt 0 -and $testFailedCount -eq 0 -and $testPassedCount -eq $testTotal) {
+            $testCountVerified = $true
+        }
+    } catch {
+        Write-Warning "Failed to parse TRX XML counters: $_"
+    }
 }
 
-if (-not $unitTestsPassed -or $testFailedCount -gt 0) {
-    throw "[FATAL] Host unit tests failed! Passed: $testPassedCount, Failed: $testFailedCount"
+if (-not $unitTestsPassed -or -not $testCountVerified -or $testFailedCount -gt 0) {
+    throw "[FATAL] Host unit tests failed or unverified! Total: $testTotal, Passed: $testPassedCount, Failed: $testFailedCount"
 }
 
 $buildVerification = @{
     Timestamp = $timestamp
     SolutionBuildPassed = $solutionBuildPassed
     UnitTestsPassed = $unitTestsPassed
+    TestCountVerified = $testCountVerified
     TestTotal = $testTotal
     TestPassed = $testPassedCount
     TestFailed = $testFailedCount
+    TestSkipped = $testSkippedCount
 }
 $buildVerification | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\build-verification.json" -Encoding UTF8
-Write-Host "  [OK] Host build and unit tests passed ($testPassedCount/$testTotal tests passed)." -ForegroundColor Green
+Write-Host "  [OK] Host build and unit tests passed ($testPassedCount/$testTotal tests passed verified via TRX)." -ForegroundColor Green
 
 # -----------------------------------------------------------------------------
 # STEP 2: Boot 120Hz Emulator, Configure, & Readback Verification
@@ -238,8 +269,11 @@ $installOut = Invoke-AdbOutput "install -r -d -t `"$apkPath`""
 if ($installOut -notmatch "Success") { throw "Failed to install benchmark APK: $installOut" }
 Write-Host "  [OK] Benchmark APK installed successfully." -ForegroundColor Green
 
-# Post-boot fail-closed readback & dynamic environment fingerprinting
+# -----------------------------------------------------------------------------
+# STEP 3: Post-Boot Fail-Closed Readback & Environment Fingerprinting
+# -----------------------------------------------------------------------------
 Write-Host "`n[3/6] Performing Post-Boot Readback & Capturing Environment Fingerprint..." -ForegroundColor Yellow
+
 $guestFingerprint = (Invoke-AdbOutput "shell getprop ro.build.fingerprint").Trim()
 if ([string]::IsNullOrWhiteSpace($guestFingerprint)) {
     throw "[FATAL] Guest build fingerprint readback returned empty string!"
@@ -252,16 +286,36 @@ $readWmDensity = (Invoke-AdbOutput "shell wm density").Trim()
 $readPeakRefresh = (Invoke-AdbOutput "shell settings get system peak_refresh_rate").Trim()
 $readMinRefresh = (Invoke-AdbOutput "shell settings get system min_refresh_rate").Trim()
 $readVsync = (Invoke-AdbOutput "shell getprop ro.boot.qemu.vsync").Trim()
-$readEmulatorVer = try { (Invoke-AdbGlobalOutput "version").Split("`n")[0].Trim() } catch { "Android Emulator" }
 
+# Query emulator version directly via emulator binary
+$emulatorVersionOutput = try { (& $emulator -version 2>&1) | Out-String } catch { "UNKNOWN" }
+$emulatorVersion = if ($emulatorVersionOutput -match "(Android\s+emulator\s+version\s+[^\r\n]+)") {
+    $Matches[1].Trim()
+} else {
+    $emulatorVersionOutput.Split("`n")[0].Trim()
+}
+
+# Parse config.ini for AVD GPU, transport, and VSYNC
+$avdConfigLines = if (Test-Path $avdConfigPath) { Get-Content $avdConfigPath } else { @() }
+$avdGpuMode = "UNKNOWN"
+$avdGlTransport = "UNKNOWN"
+$avdVsync = "UNKNOWN"
+
+foreach ($line in $avdConfigLines) {
+    if ($line -match "^\s*hw\.gpu\.mode\s*=\s*(?<v>[^\s\r\n#]+)") { $avdGpuMode = $Matches['v'] }
+    elseif ($line -match "^\s*hw\.gltransport\s*=\s*(?<v>[^\s\r\n#]+)") { $avdGlTransport = $Matches['v'] }
+    elseif ($line -match "^\s*hw\.lcd\.vsync\s*=\s*(?<v>[^\s\r\n#]+)") { $avdVsync = $Matches['v'] }
+}
+
+# Fail-Closed Assertions
 if ($readWmSize -notmatch "1920x1200") { throw "[FATAL] Fail-closed readback failed: wm size ($readWmSize) != 1920x1200" }
 if ($readWmDensity -notmatch "280") { throw "[FATAL] Fail-closed readback failed: wm density ($readWmDensity) != 280" }
-if ($readPeakRefresh -notmatch "120") { throw "[FATAL] Fail-closed readback failed: peak_refresh_rate ($readPeakRefresh) != 120.0" }
+if ($readPeakRefresh -notmatch "^120(\.0+)?$") { throw "[FATAL] Fail-closed readback failed: peak_refresh_rate ($readPeakRefresh) != 120.0" }
+if ($readMinRefresh -notmatch "^120(\.0+)?$") { throw "[FATAL] Fail-closed readback failed: min_refresh_rate ($readMinRefresh) != 120.0" }
 if ($readVsync -ne "120") { throw "[FATAL] Fail-closed readback failed: ro.boot.qemu.vsync ($readVsync) != 120" }
-
-$gitCommit = try { (git rev-parse HEAD).Trim() } catch { "UNKNOWN" }
-$gitStatus = try { (git status --porcelain).Trim() } catch { "" }
-$gitDirty = [bool]($gitStatus.Length -gt 0)
+if ($avdGpuMode -ne "host") { throw "[FATAL] AVD config.ini hw.gpu.mode ($avdGpuMode) is not 'host'!" }
+if ($avdGlTransport -ne "pipe") { throw "[FATAL] AVD config.ini hw.gltransport ($avdGlTransport) is not 'pipe'!" }
+if ($avdVsync -ne "120") { throw "[FATAL] AVD config.ini hw.lcd.vsync ($avdVsync) is not '120'!" }
 
 $osCaption = (Get-CimInstance Win32_OperatingSystem).Caption
 $osVersion = (Get-CimInstance Win32_OperatingSystem).Version
@@ -269,20 +323,24 @@ $hostOsFull = "$osCaption (Build $osVersion)"
 $cpuName = (Get-CimInstance Win32_Processor | Select-Object -First 1).Name.Trim()
 $ramGb = [math]::Round(((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB), 1).ToString() + " GB"
 $gpuList = ((Get-CimInstance Win32_VideoController | ForEach-Object { $_.Name }) -join ", ")
+$adbVersion = (Invoke-AdbGlobalOutput "version").Split("`n")[0].Trim()
 
 $environmentFingerprint = @{
     Timestamp = $timestamp
-    GitCommit = $gitCommit
-    GitDirty = $gitDirty
-    CanonicalTree = (-not $gitDirty)
+    SourceGitCommit = $sourceCommit
+    SourceTreeDirtyAtStart = $sourceTreeDirty
+    CanonicalSourceTree = (-not $sourceTreeDirty)
     HostOS = $hostOsFull
     OSVersion = $osVersion
     CPU = $cpuName
     RAM = $ramGb
     GPU = $gpuList
-    AdbVersion = (Invoke-AdbGlobalOutput "version").Split("`n")[0].Trim()
-    EmulatorVersion = $readEmulatorVer
+    AdbVersion = $adbVersion
+    EmulatorVersion = $emulatorVersion
     AvdName = $AvdName
+    AvdConfigGpuMode = $avdGpuMode
+    AvdConfigGlTransport = $avdGlTransport
+    AvdConfigVsync = $avdVsync
     GuestBuildFingerprint = $guestFingerprint
     GuestRelease = $guestRelease
     GuestSdk = $guestSdk
@@ -291,13 +349,13 @@ $environmentFingerprint = @{
     PeakRefreshRate = $readPeakRefresh
     MinRefreshRate = $readMinRefresh
     QemuVsyncProp = $readVsync
-    GpuBackend = "hw.gpu.mode=host (gfxstream)"
-    GlTransport = "hw.gltransport=pipe"
+    GpuBackend = "hw.gpu.mode=$avdGpuMode (gfxstream)"
+    GlTransport = "hw.gltransport=$avdGlTransport"
     EmbeddingMechanism = "Win32 SetParent Child Window"
 }
 
 $environmentFingerprint | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\environment.json" -Encoding UTF8
-Write-Host "  [OK] Readback verified & Fingerprint saved: $guestFingerprint (Git: $gitCommit, Dirty: $gitDirty)" -ForegroundColor Green
+Write-Host "  [OK] Readback verified & Fingerprint saved: $guestFingerprint (Emulator: $emulatorVersion)" -ForegroundColor Green
 
 # Build TabletDroid.Host for embedded trials with fail-closed check
 $hostProj = "$rootDir\host\TabletDroid.Host\TabletDroid.Host.csproj"
@@ -853,6 +911,45 @@ $conditionSummary = @{
 }
 $conditionSummary | ConvertTo-Json -Depth 6 | Set-Content -Path "$sessionOutputDir\condition-summary.json" -Encoding UTF8
 
+# -----------------------------------------------------------------------------
+# STEP 6: Dynamic Acceptance & Provenance Gate Synthesis (acceptance.json)
+# -----------------------------------------------------------------------------
+$gateSourceTreeClean = (-not $sourceTreeDirty)
+$gateSourceCommit = ($sourceCommit.Length -eq 40)
+$gateGuestFingerprint = (-not [string]::IsNullOrWhiteSpace($guestFingerprint))
+$gateDisplay = ($readWmSize -match "1920x1200" -and $readWmDensity -match "280")
+$gateRefreshPolicy = ($readPeakRefresh -match "^120" -and $readMinRefresh -match "^120" -and $readVsync -eq "120")
+$gateGraphicsTransport = ($avdGpuMode -eq "host" -and $avdGlTransport -eq "pipe" -and $avdVsync -eq "120")
+$embeddedVerifiedCount = ($allEmbeddedTrials | Where-Object { $_.EmbeddingVerified -eq $true }).Count
+$gateEmbeddingTrials = ($embeddedVerifiedCount -eq $TrialCount)
+$gateBuild = $solutionBuildPassed
+$gateTests = ($unitTestsPassed -and $testCountVerified)
+$gateEventIntegrity = ($totStdRejected -eq 0 -and $totEmbRejected -eq 0)
+
+$canonicalPass = $gateSourceTreeClean -and $gateSourceCommit -and $gateGuestFingerprint -and $gateDisplay -and $gateRefreshPolicy -and $gateGraphicsTransport -and $gateEmbeddingTrials -and $gateBuild -and $gateTests -and $gateEventIntegrity
+
+$canonicalResult = if ($canonicalPass) { "PASS" } else { "FAIL" }
+
+$acceptanceData = @{
+    Timestamp = $timestamp
+    CanonicalResult = $canonicalResult
+    SourceTreeClean = $gateSourceTreeClean
+    SourceCommitVerified = $gateSourceCommit
+    GuestFingerprintVerified = $gateGuestFingerprint
+    DisplayVerified = $gateDisplay
+    RefreshPolicyVerified = $gateRefreshPolicy
+    GraphicsTransportVerified = $gateGraphicsTransport
+    EmbeddingTrialsVerified = $embeddedVerifiedCount
+    ExpectedEmbeddingTrials = $TrialCount
+    BuildPassed = $gateBuild
+    TestsPassed = $gateTests
+    TestCount = $testTotal
+    EventIntegrityPassed = $gateEventIntegrity
+    TotalValidRecords = ($totStdValid + $totEmbValid)
+    TotalRejectedRecords = ($totStdRejected + $totEmbRejected)
+}
+$acceptanceData | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\acceptance.json" -Encoding UTF8
+
 $methodologyMeta = @{
     SchemaVersion = 3
     TrialProtocol = "Counter-balanced AB / BA alternation"
@@ -863,15 +960,16 @@ $methodologyMeta = @{
     StateReset = "am force-stop + am start + 1.5s stabilization + logcat -c"
     Terminology = "Guest Synthetic Software Input-to-Frame Baseline"
     EmbeddingVerification = "Fatal per-trial GET_GEOMETRY isEmbedded=true gate"
-    AcceptanceStatus = "PASS"
+    AcceptanceStatus = $canonicalResult
 }
 $methodologyMeta | ConvertTo-Json -Depth 3 | Set-Content -Path "$sessionOutputDir\methodology.json" -Encoding UTF8
 
 # -----------------------------------------------------------------------------
-# STEP 6: Display Summary Tables
+# STEP 7: Display Summary Tables
 # -----------------------------------------------------------------------------
 Write-Host "`n================================================================================" -ForegroundColor Cyan
-Write-Host " CANONICAL HARDENED INPUT LATENCY A/B COMPARISON TABLE (Final Integrity, 6 Trials)" -ForegroundColor Cyan
+Write-Host " CANONICAL HARDENED INPUT LATENCY A/B COMPARISON TABLE (Provenance Hardened, 6 Trials)" -ForegroundColor Cyan
+Write-Host " Acceptance Status : $canonicalResult (Clean Tree: $gateSourceTreeClean, Fingerprint: $gateGuestFingerprint)" -ForegroundColor Yellow
 Write-Host "================================================================================" -ForegroundColor Cyan
 
 $fmtHeader = "{0,-44} | {1,-14} | {2,-14} | {3,-12} | {4,-10}"
@@ -887,7 +985,20 @@ Write-Host "`n[ORDER EFFECT ANALYSIS]" -ForegroundColor Yellow
 Write-Host "  Standalone : First-run P50 = ${stdFirstP50}ms | Second-run P50 = ${stdSecondP50}ms | Order Delta = ${stdOrderDelta}ms" -ForegroundColor White
 Write-Host "  Embedded   : First-run P50 = ${embFirstP50}ms | Second-run P50 = ${embSecondP50}ms | Order Delta = ${embOrderDelta}ms" -ForegroundColor White
 
+Write-Host "`n[ACCEPTANCE GATES STATUS: $canonicalResult]" -ForegroundColor Yellow
+Write-Host "  - SourceTreeClean          : $gateSourceTreeClean" -ForegroundColor White
+Write-Host "  - SourceCommitVerified     : $gateSourceCommit ($sourceCommit)" -ForegroundColor White
+Write-Host "  - GuestFingerprintVerified : $gateGuestFingerprint" -ForegroundColor White
+Write-Host "  - DisplayVerified          : $gateDisplay" -ForegroundColor White
+Write-Host "  - RefreshPolicyVerified    : $gateRefreshPolicy" -ForegroundColor White
+Write-Host "  - GraphicsTransportVerified: $gateGraphicsTransport" -ForegroundColor White
+Write-Host "  - EmbeddingTrialsVerified  : $embeddedVerifiedCount / $TrialCount" -ForegroundColor White
+Write-Host "  - BuildPassed              : $gateBuild" -ForegroundColor White
+Write-Host "  - TestsPassed              : $gateTests ($testPassedCount / $testTotal)" -ForegroundColor White
+Write-Host "  - EventIntegrityPassed     : $gateEventIntegrity (Rejected: $($totStdRejected + $totEmbRejected))" -ForegroundColor White
+
 Write-Host "`n[ARTIFACTS SAVED] $sessionOutputDir" -ForegroundColor Green
+Write-Host " - acceptance.json" -ForegroundColor Green
 Write-Host " - build-verification.json" -ForegroundColor Green
 Write-Host " - environment.json" -ForegroundColor Green
 Write-Host " - methodology.json" -ForegroundColor Green
@@ -896,3 +1007,7 @@ Write-Host " - trial-summary.csv" -ForegroundColor Green
 Write-Host " - condition-summary.json" -ForegroundColor Green
 Write-Host " - comparison.csv" -ForegroundColor Green
 Write-Host " - order-effect.csv" -ForegroundColor Green
+
+if (-not $canonicalPass) {
+    throw "[FATAL] Canonical acceptance gate failed! Result: FAIL"
+}
